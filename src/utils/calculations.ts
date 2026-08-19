@@ -186,6 +186,8 @@ export const DEFAULT_PROFILE: UserProfile = {
   age: 29,
   activityLevel: 'light',
   isInitialized: true,
+  reminderEnabled: true,
+  reminderTime: '20:30',
 };
 
 // Seed realistic sample history for the past 6 days so trend chart is instantly rich and inspiring

@@ -10,11 +10,16 @@ import {
   Check, 
   Sparkles, 
   Target, 
-  Info,
-  ShieldAlert,
-  Smartphone,
-  RefreshCw,
-  Heart
+  Info, 
+  ShieldAlert, 
+  Smartphone, 
+  RefreshCw, 
+  Heart,
+  Bell,
+  Clock,
+  Send,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { 
@@ -27,6 +32,12 @@ import {
 } from '../utils/calculations';
 import { HealthSyncModal } from './HealthSyncModal';
 import { HealthSyncResult } from '../utils/healthSync';
+import { 
+  getNotificationPermission, 
+  requestNotificationPermission, 
+  sendTestReminder,
+  isNotificationSupported
+} from '../utils/reminder';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -41,9 +52,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   profile,
   onSaveProfile,
 }) => {
-  const [formData, setFormData] = useState<UserProfile>({ ...profile });
+  const [formData, setFormData] = useState<UserProfile>({ 
+    ...profile,
+    reminderEnabled: profile.reminderEnabled ?? true,
+    reminderTime: profile.reminderTime ?? '20:30'
+  });
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [testNotice, setTestNotice] = useState<{ text: string; success: boolean } | null>(null);
+  const [isTestingNotification, setIsTestingNotification] = useState(false);
 
   if (!isOpen) return null;
 
@@ -53,6 +70,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const bmr = calculateBMR(formData);
   const tdee = calculateTDEE(formData);
   const waterNeed = calculateDailyWaterNeed(formData.weight);
+  const notificationPerm = getNotificationPermission();
 
   const handleApplySyncedData = (res: HealthSyncResult) => {
     setFormData((prev) => ({
@@ -64,6 +82,28 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     }));
     setSyncNotice(`已成功自【${res.sourceName}】同步體重 ${res.weight} kg ${res.bodyFat ? `(體脂 ${res.bodyFat}%)` : ''}`);
     setIsSyncModalOpen(false);
+  };
+
+  const handleRequestPermission = async () => {
+    const res = await requestNotificationPermission();
+    if (res === 'granted') {
+      setTestNotice({ text: '已成功授權瀏覽器本地通知權限！', success: true });
+    } else {
+      setTestNotice({ text: '未獲得瀏覽器通知授權，將使用應用內橫幅作為提醒方式。', success: false });
+    }
+  };
+
+  const handleSendTest = async () => {
+    setIsTestingNotification(true);
+    try {
+      const res = await sendTestReminder(formData.reminderTime || '20:30');
+      setTestNotice({ text: res.message, success: res.success });
+    } catch (err) {
+      console.error(err);
+      setTestNotice({ text: '發送測試提醒時發生異常', success: false });
+    } finally {
+      setIsTestingNotification(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -86,10 +126,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-                個人體態基本資料設定
+                個人體態與問卷提醒設定
               </h2>
               <p className="text-xs text-slate-500">
-                自動計算 BMI、標準理想體重、BMR 與每日建議飲水量
+                設定每日 10 題定時通知、基本身體素質與手機健康同步
               </p>
             </div>
           </div>
@@ -164,6 +204,117 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
         {/* Input Form */}
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          
+          {/* Section 1: Daily Reminder Settings (每日問卷定時提醒區塊) */}
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 border border-indigo-100/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-indigo-600 text-white">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-xs">每日 10 題問卷提醒設定</h3>
+                  <p className="text-[11px] text-slate-500">定時在瀏覽器與手機中跳出通知，提醒您結算健康資產</p>
+                </div>
+              </div>
+
+              {/* Toggle Switch */}
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(formData.reminderEnabled)}
+                  onChange={(e) => setFormData({ ...formData, reminderEnabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-5 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            {formData.reminderEnabled && (
+              <div className="space-y-2.5 pt-2 border-t border-indigo-100/60">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
+                    <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>每日提醒時間點：</span>
+                  </div>
+
+                  <input
+                    type="time"
+                    value={formData.reminderTime || '20:30'}
+                    onChange={(e) => setFormData({ ...formData, reminderTime: e.target.value })}
+                    className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-white font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+
+                {/* Preset Quick Time Selection Pills */}
+                <div className="flex items-center justify-between gap-1 pt-1">
+                  {[
+                    { label: '晨間量測 (07:30)', time: '07:30' },
+                    { label: '午餐盤點 (13:00)', time: '13:00' },
+                    { label: '晚間結算 (20:30)', time: '20:30' },
+                    { label: '睡前盤點 (22:00)', time: '22:00' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.time}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, reminderTime: preset.time })}
+                      className={`flex-1 py-1 px-1 rounded-lg text-[10px] font-semibold border transition-all text-center ${
+                        formData.reminderTime === preset.time
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Browser Notification Status & Test Action */}
+                <div className="flex items-center justify-between pt-2 text-[11px] bg-white/70 p-2.5 rounded-xl border border-indigo-100">
+                  <div className="flex items-center gap-1.5 text-slate-600">
+                    <span className="font-medium">通知狀態：</span>
+                    {notificationPerm === 'granted' ? (
+                      <span className="text-emerald-700 font-bold flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> 已授權瀏覽器通知
+                      </span>
+                    ) : notificationPerm === 'denied' ? (
+                      <span className="text-rose-600 font-bold flex items-center gap-0.5">
+                        <AlertCircle className="w-3 h-3 text-rose-500" /> 瀏覽器已封鎖通知
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRequestPermission}
+                        className="text-indigo-600 font-bold underline hover:text-indigo-700"
+                      >
+                        點此授權瀏覽器通知
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSendTest}
+                    disabled={isTestingNotification}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold shadow-xs flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    <Send className={`w-3 h-3 ${isTestingNotification ? 'animate-bounce' : ''}`} />
+                    <span>測試發送提醒</span>
+                  </button>
+                </div>
+
+                {testNotice && (
+                  <div className={`p-2 rounded-xl text-[11px] flex items-center gap-1.5 ${
+                    testNotice.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                  }`}>
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>{testNotice.text}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Name */}
             <div>
@@ -312,7 +463,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all flex items-center gap-1.5"
             >
               <Check className="w-4 h-4" />
-              <span>儲存個人基本設定</span>
+              <span>儲存個人設定與提醒</span>
             </button>
           </div>
         </form>
@@ -328,4 +479,5 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     </div>
   );
 };
+
 

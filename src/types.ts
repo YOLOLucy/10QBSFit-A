@@ -48,6 +48,8 @@ export interface UserProfile {
   isInitialized: boolean;
   autoSyncEnabled?: boolean;
   preferredSyncSource?: WeightSource;
+  reminderEnabled?: boolean;
+  reminderTime?: string; // e.g. "20:00" or "08:00"
 }
 
 export interface DailyAnswer {

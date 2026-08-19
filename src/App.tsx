@@ -22,6 +22,7 @@ import {
   isWeekend
 } from './utils/calculations';
 import { getDailyQuestionsForDate } from './data/questionBank';
+import { sendLocalNotification } from './utils/reminder';
 import { 
   Sparkles, 
   Smartphone, 
@@ -32,7 +33,10 @@ import {
   FileSpreadsheet,
   ShoppingCart,
   LineChart,
-  CheckCircle2
+  CheckCircle2,
+  Bell,
+  X,
+  ArrowRight
 } from 'lucide-react';
 
 export default function App() {
@@ -40,6 +44,7 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'questions' | 'balancesheet' | 'trend' | 'grocery' | 'profile'>('home');
   const [mobileViewMode, setMobileViewMode] = useState(false);
+  const [reminderToast, setReminderToast] = useState<{ title: string; body: string; timestamp?: string } | null>(null);
 
   const todayStr = getTodayDateString();
   const [records, setRecords] = useState<DailyRecord[]>(() => loadHealthRecords(profile.weight));
@@ -49,6 +54,47 @@ export default function App() {
   const todayRecord = records.find((r) => r.date === todayStr) || null;
   const todayCompleted = Boolean(todayRecord?.completed);
   const latestRecord = records.length > 0 ? records[records.length - 1] : null;
+
+  // Listen to custom reminder events (e.g. from test button or background timer)
+  useEffect(() => {
+    const handleReminderTrigger = (e: Event) => {
+      const customEvent = e as CustomEvent<{ title: string; body: string; timestamp?: string }>;
+      if (customEvent.detail) {
+        setReminderToast(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('health-reminder-trigger', handleReminderTrigger);
+    return () => {
+      window.removeEventListener('health-reminder-trigger', handleReminderTrigger);
+    };
+  }, []);
+
+  // Background timer to check daily reminder time
+  useEffect(() => {
+    if (!profile.reminderEnabled || !profile.reminderTime) return;
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const currentHours = String(now.getHours()).padStart(2, '0');
+      const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+      const currentTimeStr = `${currentHours}:${currentMinutes}`;
+
+      if (currentTimeStr === profile.reminderTime && !todayCompleted) {
+        const lastNotifiedKey = `last_notified_${todayStr}_${profile.reminderTime}`;
+        const hasNotified = sessionStorage.getItem(lastNotifiedKey);
+        if (!hasNotified) {
+          sessionStorage.setItem(lastNotifiedKey, 'true');
+          sendLocalNotification({
+            title: '📊 今日健康資產負債表定時提醒',
+            body: `現在是 ${profile.reminderTime}，快來花 1 分鐘回答 10 題健康問卷，為今日存入健康資產！`,
+          });
+        }
+      }
+    }, 30000); // check every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [profile.reminderEnabled, profile.reminderTime, todayCompleted, todayStr]);
 
   const handleCompleteCheckin = (newRecord: DailyRecord) => {
     // Upsert today's record
@@ -85,6 +131,52 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-emerald-200">
+      {/* In-app Notification Banner / Toast */}
+      {reminderToast && (
+        <div className="fixed top-4 right-4 left-4 sm:left-auto sm:w-96 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-indigo-600 text-white shrink-0 mt-0.5 animate-pulse">
+              <Bell className="w-5 h-5" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-xs text-white">{reminderToast.title}</h4>
+                <span className="text-[10px] text-slate-400">{reminderToast.timestamp || '剛剛'}</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {reminderToast.body}
+              </p>
+              <div className="pt-1.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('questions');
+                    setReminderToast(null);
+                  }}
+                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors"
+                >
+                  <span>立即填寫 10 題</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReminderToast(null)}
+                  className="px-2 py-1 rounded-lg text-slate-400 hover:text-white text-[11px]"
+                >
+                  稍後再說
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={() => setReminderToast(null)}
+              className="text-slate-400 hover:text-white p-1 rounded-lg"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
