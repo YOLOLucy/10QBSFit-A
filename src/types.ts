@@ -12,6 +12,21 @@ export interface QuestionDBItem {
   galpin_principle: string;
   description?: string;
   tip?: string;
+  isCustom?: boolean;
+  packId?: string;
+}
+
+export interface QuestionPack {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  priceNTD: number; // 10 NTD
+  totalQuestions: number;
+  categoriesSummary: string;
+  galpinFocus: string;
+  badge: string;
+  questions: QuestionDBItem[];
 }
 
 export interface HealthQuestion {

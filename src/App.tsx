@@ -6,6 +6,7 @@ import { BalanceSheetResult } from './components/BalanceSheetResult';
 import { TrendAnalysis } from './components/TrendAnalysis';
 import { WeekendGroceryMealPlan } from './components/WeekendGroceryMealPlan';
 import { ProfileModal } from './components/ProfileModal';
+import { QuestionBankModal } from './components/QuestionBankModal';
 import { 
   UserProfile, 
   DailyRecord, 
@@ -42,6 +43,7 @@ import {
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(() => loadUserProfile());
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isQuestionBankOpen, setIsQuestionBankOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'questions' | 'balancesheet' | 'trend' | 'grocery' | 'profile'>('home');
   const [mobileViewMode, setMobileViewMode] = useState(false);
   const [reminderToast, setReminderToast] = useState<{ title: string; body: string; timestamp?: string } | null>(null);
@@ -49,6 +51,10 @@ export default function App() {
   const todayStr = getTodayDateString();
   const [records, setRecords] = useState<DailyRecord[]>(() => loadHealthRecords(profile.weight));
   const [todayQuestions, setTodayQuestions] = useState<HealthQuestion[]>(() => getDailyQuestionsForDate(todayStr));
+
+  const handleRefreshQuestions = () => {
+    setTodayQuestions(getDailyQuestionsForDate(todayStr));
+  };
 
   // Find today's record if completed, and find latest record overall
   const todayRecord = records.find((r) => r.date === todayStr) || null;
@@ -183,6 +189,7 @@ export default function App() {
         setActiveTab={setActiveTab}
         profile={profile}
         onOpenProfile={() => setIsProfileModalOpen(true)}
+        onOpenQuestionBank={() => setIsQuestionBankOpen(true)}
         todayCompleted={todayCompleted}
         mobileViewMode={mobileViewMode}
         setMobileViewMode={setMobileViewMode}
@@ -207,6 +214,7 @@ export default function App() {
               onViewTrends={() => setActiveTab('trend')}
               onViewGrocery={() => setActiveTab('grocery')}
               onOpenProfile={() => setIsProfileModalOpen(true)}
+              onOpenQuestionBank={() => setIsQuestionBankOpen(true)}
             />
           )}
 
@@ -310,6 +318,13 @@ export default function App() {
         onClose={() => setIsProfileModalOpen(false)}
         profile={profile}
         onSaveProfile={handleSaveProfile}
+      />
+
+      {/* Question Bank Manager & Expansion Packs (每次50題加購10元) Modal */}
+      <QuestionBankModal
+        isOpen={isQuestionBankOpen}
+        onClose={() => setIsQuestionBankOpen(false)}
+        onDatabaseUpdated={handleRefreshQuestions}
       />
     </div>
   );

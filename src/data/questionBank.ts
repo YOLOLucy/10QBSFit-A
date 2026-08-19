@@ -1,4 +1,9 @@
 import { HealthQuestion, QuestionDBItem } from '../types';
+import { 
+  loadCustomQuestions, 
+  loadPurchasedPackIds, 
+  MARKETPLACE_QUESTION_PACKS 
+} from './questionPacks';
 
 /**
  * Health Question Database (Galpin Human Performance & Health Accounting Model)
@@ -365,18 +370,52 @@ export const HYDRATION_QUESTIONS = QUESTION_DATABASE.filter((q) => q.category ==
 export const WEIGHT_QUESTION_DB = QUESTION_DATABASE.find((q) => q.category === 'weight') || QUESTION_DATABASE[QUESTION_DATABASE.length - 1];
 
 /**
+ * Returns the full merged question database including base questions,
+ * purchased expansion packs (50 questions each), and user-defined custom questions.
+ */
+export function getAllMergedQuestionDatabase(
+  customQuestions?: QuestionDBItem[],
+  purchasedPackIds?: string[]
+): QuestionDBItem[] {
+  const custom = customQuestions ?? loadCustomQuestions();
+  const packIds = purchasedPackIds ?? loadPurchasedPackIds();
+
+  const unlockedPackQuestions: QuestionDBItem[] = [];
+  packIds.forEach((id) => {
+    const pack = MARKETPLACE_QUESTION_PACKS.find((p) => p.id === id);
+    if (pack) {
+      unlockedPackQuestions.push(...pack.questions);
+    }
+  });
+
+  return [...QUESTION_DATABASE, ...unlockedPackQuestions, ...custom];
+}
+
+/**
  * Generates 10 questions for a given date seed:
  * - 3 from Nutrition category
  * - 3 from Exercise category
  * - 3 from Hydration/Recovery category
  * - 1 mandatory Weight question (W001)
+ * Seamlessly samples from the entire expanded active database pool!
  */
-export function getDailyQuestionsForDate(dateStr: string): HealthQuestion[] {
+export function getDailyQuestionsForDate(
+  dateStr: string,
+  customQuestions?: QuestionDBItem[],
+  purchasedPackIds?: string[]
+): HealthQuestion[] {
   // Deterministic seed based on date string e.g. "2026-08-18"
   let seed = 0;
   for (let i = 0; i < dateStr.length; i++) {
     seed = (seed * 31 + dateStr.charCodeAt(i)) >>> 0;
   }
+
+  const allQuestions = getAllMergedQuestionDatabase(customQuestions, purchasedPackIds);
+
+  const nutritions = allQuestions.filter((q) => q.category === 'nutrition');
+  const exercises = allQuestions.filter((q) => q.category === 'exercise');
+  const hydrations = allQuestions.filter((q) => q.category === 'hydration');
+  const weightQ = allQuestions.find((q) => q.category === 'weight') || WEIGHT_QUESTION_DB;
 
   const shuffle = <T>(arr: T[], seedOffset: number): T[] => {
     const copy = [...arr];
@@ -387,10 +426,11 @@ export function getDailyQuestionsForDate(dateStr: string): HealthQuestion[] {
     return copy;
   };
 
-  const selectedNutrition = shuffle(NUTRITION_QUESTIONS, 1).slice(0, 3).map(convertDBItemToHealthQuestion);
-  const selectedExercise = shuffle(EXERCISE_QUESTIONS, 2).slice(0, 3).map(convertDBItemToHealthQuestion);
-  const selectedHydration = shuffle(HYDRATION_QUESTIONS, 3).slice(0, 3).map(convertDBItemToHealthQuestion);
-  const weightQuestion = convertDBItemToHealthQuestion(WEIGHT_QUESTION_DB);
+  const selectedNutrition = shuffle(nutritions, 1).slice(0, 3).map(convertDBItemToHealthQuestion);
+  const selectedExercise = shuffle(exercises, 2).slice(0, 3).map(convertDBItemToHealthQuestion);
+  const selectedHydration = shuffle(hydrations, 3).slice(0, 3).map(convertDBItemToHealthQuestion);
+  const weightQuestion = convertDBItemToHealthQuestion(weightQ);
 
   return [...selectedNutrition, ...selectedExercise, ...selectedHydration, weightQuestion];
 }
+

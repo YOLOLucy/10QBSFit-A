@@ -8,7 +8,8 @@ import {
   User, 
   Calendar,
   Sparkles,
-  Smartphone
+  Smartphone,
+  Database
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { calculateBMI, getBMICategory, formatDateDisplay, getTodayDateString, isWeekend } from '../utils/calculations';
@@ -18,6 +19,7 @@ interface NavbarProps {
   setActiveTab: (tab: 'home' | 'questions' | 'balancesheet' | 'trend' | 'grocery' | 'profile') => void;
   profile: UserProfile;
   onOpenProfile: () => void;
+  onOpenQuestionBank: () => void;
   todayCompleted: boolean;
   mobileViewMode: boolean;
   setMobileViewMode: (v: boolean | ((prev: boolean) => boolean)) => void;
@@ -28,6 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   profile,
   onOpenProfile,
+  onOpenQuestionBank,
   todayCompleted,
   mobileViewMode,
   setMobileViewMode,
@@ -133,8 +136,22 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Right: Quick Profile Capsule (BMI / Height / Weight) */}
+        {/* Right: Quick Actions & Profile Capsule */}
         <div className="flex items-center gap-2">
+          {/* Question Bank Manager & Expansion Market Button */}
+          <button
+            onClick={onOpenQuestionBank}
+            id="open-question-bank-btn"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 transition-all text-xs font-bold shadow-2xs group"
+            title="題庫管理、自訂題目與每次50題付費10元擴充包"
+          >
+            <Database className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+            <span className="hidden sm:inline">題庫擴充</span>
+            <span className="bg-indigo-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+              +50題
+            </span>
+          </button>
+
           <button
             onClick={onOpenProfile}
             id="open-profile-btn"
