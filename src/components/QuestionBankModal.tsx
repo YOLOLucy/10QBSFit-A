@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   X, 
   Database, 
@@ -26,7 +26,12 @@ import {
   Droplet,
   Scale,
   ArrowRight,
-  Smartphone
+  Smartphone,
+  FileSpreadsheet,
+  FileDown,
+  FileUp,
+  RefreshCw,
+  Info
 } from 'lucide-react';
 import { QuestionDBItem, QuestionPack } from '../types';
 import { 
@@ -37,6 +42,12 @@ import {
   savePurchasedPackIds 
 } from '../data/questionPacks';
 import { QUESTION_DATABASE, getAllMergedQuestionDatabase } from '../data/questionBank';
+import { 
+  exportQuestionsToCSV, 
+  downloadCSVTemplate, 
+  parseQuestionsFromCSV, 
+  CSVParseResult 
+} from '../utils/csvHelper';
 
 interface QuestionBankModalProps {
   isOpen: boolean;
@@ -49,7 +60,7 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
   onClose,
   onDatabaseUpdated,
 }) => {
-  const [activeTab, setActiveTab] = useState<'explore' | 'create' | 'store'>('explore');
+  const [activeTab, setActiveTab] = useState<'explore' | 'create' | 'csv' | 'store'>('explore');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'nutrition' | 'exercise' | 'hydration' | 'weight'>('all');
   const [attributeFilter, setAttributeFilter] = useState<'all' | 'asset' | 'liability'>('all');
@@ -67,6 +78,13 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
   const [newDescription, setNewDescription] = useState('');
   const [newTip, setNewTip] = useState('');
   const [formNotice, setFormNotice] = useState<{ text: string; success: boolean } | null>(null);
+
+  // CSV Import/Export State
+  const [csvImportMode, setCsvImportMode] = useState<'append' | 'replace'>('append');
+  const [parsedCSVPreview, setParsedCSVPreview] = useState<CSVParseResult | null>(null);
+  const [isDraggingCSV, setIsDraggingCSV] = useState(false);
+  const [csvNotice, setCsvNotice] = useState<{ text: string; success: boolean } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Store Checkout Modal State
   const [purchasingPack, setPurchasingPack] = useState<QuestionPack | null>(null);
@@ -139,6 +157,97 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
     onDatabaseUpdated?.();
   };
 
+  // CSV Import Handlers
+  const processCSVFile = (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setCsvNotice({ text: '請上傳標準格式之 .csv 檔案', success: false });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      if (!text) {
+        setCsvNotice({ text: '無法讀取該 CSV 檔案內容', success: false });
+        return;
+      }
+
+      const result = parseQuestionsFromCSV(text);
+      if (!result.success || result.data.length === 0) {
+        setCsvNotice({ 
+          text: `解析失敗：${result.errors.length > 0 ? result.errors.join('；') : '未找到有效問題欄位'}`, 
+          success: false 
+        });
+        setParsedCSVPreview(null);
+      } else {
+        setParsedCSVPreview(result);
+        setCsvNotice({ 
+          text: `成功解析 ${result.data.length} 道題目！請檢視下方預覽並點擊「確認匯入題庫」。`, 
+          success: true 
+        });
+      }
+    };
+    reader.onerror = () => {
+      setCsvNotice({ text: '檔案讀取發生錯誤', success: false });
+    };
+    reader.readAsText(file, 'utf-8');
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processCSVFile(file);
+    }
+  };
+
+  const handleApplyCSVImport = () => {
+    if (!parsedCSVPreview || parsedCSVPreview.data.length === 0) return;
+
+    let updatedList: QuestionDBItem[] = [];
+    if (csvImportMode === 'append') {
+      // Append mode: avoid duplicate question_id
+      const existingIds = new Set(customQuestions.map((q) => q.question_id));
+      const newItems = parsedCSVPreview.data.map((item, idx) => {
+        if (existingIds.has(item.question_id)) {
+          return { ...item, question_id: `${item.question_id}_${idx}` };
+        }
+        return item;
+      });
+      updatedList = [...customQuestions, ...newItems];
+    } else {
+      // Replace mode: replace custom questions
+      updatedList = parsedCSVPreview.data;
+    }
+
+    setCustomQuestions(updatedList);
+    saveCustomQuestions(updatedList);
+    setCsvNotice({ 
+      text: `🎉 已成功將 ${parsedCSVPreview.data.length} 道題目匯入自訂題庫中！隨機抽題庫已同步更新。`, 
+      success: true 
+    });
+    setParsedCSVPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    onDatabaseUpdated?.();
+  };
+
+  const handleExportAllCSV = () => {
+    const filename = `health_accounting_all_questions_${new Date().toISOString().split('T')[0]}.csv`;
+    exportQuestionsToCSV(allMergedQuestions, filename);
+  };
+
+  const handleExportCustomCSV = () => {
+    if (customQuestions.length === 0) {
+      setCsvNotice({ text: '目前尚無自訂題目可匯出，請先新增題目或上傳 CSV。', success: false });
+      return;
+    }
+    const filename = `health_accounting_custom_questions_${new Date().toISOString().split('T')[0]}.csv`;
+    exportQuestionsToCSV(customQuestions, filename);
+  };
+
+  const handleDownloadTemplate = () => {
+    downloadCSVTemplate('health_accounting_question_template.csv');
+  };
+
   const handleConfirmPurchase = () => {
     if (!purchasingPack) return;
     setIsProcessingPayment(true);
@@ -174,7 +283,7 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                可自由自訂問題、檢視 Galpin 生理學題庫，或單次 10 元加購 50 題專業擴充包
+                可自由自訂問題、CSV 批次匯入/匯出、檢視題庫或單次 10 元加購 50 題擴充包
               </p>
             </div>
           </div>
@@ -218,11 +327,11 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl shrink-0 text-xs font-semibold">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl shrink-0 text-xs font-semibold overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('explore')}
-            className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeTab === 'explore'
                 ? 'bg-white text-indigo-700 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
@@ -235,20 +344,33 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('create')}
-            className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeTab === 'create'
                 ? 'bg-white text-indigo-700 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>自行新增題目 ({customQuestions.length})</span>
+            <span>單筆新增 ({customQuestions.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('csv')}
+            className={`flex-1 py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'csv'
+                ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>CSV 匯入 / 匯出</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('store')}
-            className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeTab === 'store'
                 ? 'bg-white text-indigo-700 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
@@ -303,26 +425,38 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
               </div>
 
               {/* Category Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
-                {[
-                  { id: 'all', label: '全部類別' },
-                  { id: 'nutrition', label: '🥗 飲食與蛋白質' },
-                  { id: 'exercise', label: '🏃 運動與肌力' },
-                  { id: 'hydration', label: '💧 飲水與晝夜' },
-                  { id: 'weight', label: '⚖️ 體重追蹤' },
-                ].map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setCategoryFilter(c.id as any)}
-                    className={`px-2.5 py-1 rounded-lg border font-medium shrink-0 transition-all ${
-                      categoryFilter === c.id
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs font-bold'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 text-[11px]">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {[
+                    { id: 'all', label: '全部類別' },
+                    { id: 'nutrition', label: '🥗 飲食與蛋白質' },
+                    { id: 'exercise', label: '🏃 運動與肌力' },
+                    { id: 'hydration', label: '💧 飲水與晝夜' },
+                    { id: 'weight', label: '⚖️ 體重追蹤' },
+                  ].map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setCategoryFilter(c.id as any)}
+                      className={`px-2.5 py-1 rounded-lg border font-medium shrink-0 transition-all ${
+                        categoryFilter === c.id
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs font-bold'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportAllCSV}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold shrink-0 text-[11px] transition-colors"
+                  title="匯出此題庫為 CSV 檔案"
+                >
+                  <Download className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>匯出 CSV</span>
+                </button>
               </div>
             </div>
 
@@ -332,7 +466,7 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                 <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 text-xs space-y-1">
                   <HelpCircle className="w-8 h-8 mx-auto text-slate-400" />
                   <p className="font-semibold">找不到符合條件的問題</p>
-                  <p className="text-[11px]">您可以嘗試搜尋其他關鍵字，或切換到「自行新增題目」建立專屬問題。</p>
+                  <p className="text-[11px]">您可以嘗試搜尋其他關鍵字，或切換到「單筆新增」或「CSV 匯入」建立問題。</p>
                 </div>
               ) : (
                 filteredQuestions.map((q) => {
@@ -554,10 +688,22 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
             {/* List of Existing Custom Questions */}
             {customQuestions.length > 0 && (
               <div className="pt-3 border-t border-slate-100 space-y-2">
-                <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5 text-purple-600" />
-                  <span>已自訂題目 ({customQuestions.length} 題)</span>
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-purple-600" />
+                    <span>已自訂題目 ({customQuestions.length} 題)</span>
+                  </h4>
+
+                  <button
+                    type="button"
+                    onClick={handleExportCustomCSV}
+                    className="text-indigo-600 hover:text-indigo-800 font-bold text-[11px] flex items-center gap-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>匯出自訂 CSV</span>
+                  </button>
+                </div>
+
                 <div className="space-y-2">
                   {customQuestions.map((cq) => (
                     <div
@@ -591,7 +737,259 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
           </div>
         )}
 
-        {/* Tab 3: Store Expansion Packs (每次更新 50 題付費 10 元機制) */}
+        {/* Tab 3: CSV Import & Export System */}
+        {activeTab === 'csv' && (
+          <div className="space-y-4 flex-1 overflow-y-auto pr-1 text-xs">
+            {/* Top Info Banner */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 text-emerald-950 flex items-start gap-2.5">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <strong className="font-bold block text-emerald-900">題庫 CSV 批次管理系統</strong>
+                <p className="text-[11px] text-emerald-800/90 leading-relaxed">
+                  支援直接透過 Excel 或 Google Sheets 編輯大量健康問答題目，再整批匯入 App 抽題庫；亦支援將現有題庫（包含生理學原理與小撇步）匯出為 CSV 進行備份。
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Action Cards: Template & Export */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 text-left transition-all space-y-1 group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700">
+                    <FileDown className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] text-indigo-600 font-bold group-hover:translate-x-0.5 transition-transform">下載</span>
+                </div>
+                <div className="font-bold text-slate-800 text-xs">下載 CSV 標準範本</div>
+                <p className="text-[10px] text-slate-500">含標準表頭與 3 筆示範題目</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportAllCSV}
+                className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/40 text-left transition-all space-y-1 group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700">
+                    <Download className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] text-emerald-600 font-bold group-hover:translate-x-0.5 transition-transform">{allMergedQuestions.length} 題</span>
+                </div>
+                <div className="font-bold text-slate-800 text-xs">匯出完整題庫 CSV</div>
+                <p className="text-[10px] text-slate-500">含 Galpin 原理與加購題庫</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportCustomCSV}
+                className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-purple-400 hover:bg-purple-50/40 text-left transition-all space-y-1 group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="p-1.5 rounded-lg bg-purple-100 text-purple-700">
+                    <Tag className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] text-purple-600 font-bold group-hover:translate-x-0.5 transition-transform">{customQuestions.length} 題</span>
+                </div>
+                <div className="font-bold text-slate-800 text-xs">僅匯出自訂題目</div>
+                <p className="text-[10px] text-slate-500">備份您的個人化專屬問答</p>
+              </button>
+            </div>
+
+            {/* CSV Upload Section */}
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                  <FileUp className="w-4 h-4 text-indigo-600" />
+                  <span>批次上傳 / 匯入 CSV 題庫</span>
+                </h4>
+
+                {/* Import Mode Radio Switch */}
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="text-slate-500 font-medium">匯入方式：</span>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="csvImportMode"
+                      checked={csvImportMode === 'append'}
+                      onChange={() => setCsvImportMode('append')}
+                      className="accent-indigo-600"
+                    />
+                    <span className={csvImportMode === 'append' ? 'font-bold text-indigo-700' : 'text-slate-600'}>
+                      增量加入 (保留既有自訂)
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="csvImportMode"
+                      checked={csvImportMode === 'replace'}
+                      onChange={() => setCsvImportMode('replace')}
+                      className="accent-indigo-600"
+                    />
+                    <span className={csvImportMode === 'replace' ? 'font-bold text-rose-700' : 'text-slate-600'}>
+                      覆蓋自訂題庫
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Drag and Drop Zone */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDraggingCSV(true);
+                }}
+                onDragLeave={() => setIsDraggingCSV(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingCSV(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) processCSVFile(file);
+                }}
+                onClick={() => fileInputRef.current?.click()}
+                className={`p-6 rounded-2xl border-2 border-dashed transition-all text-center cursor-pointer flex flex-col items-center justify-center space-y-2 ${
+                  isDraggingCSV
+                    ? 'border-indigo-500 bg-indigo-50/70 scale-[1.01]'
+                    : 'border-slate-300 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/30'
+                }`}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleFileInputChange}
+                  className="hidden"
+                />
+                <div className="p-3 rounded-full bg-white shadow-2xs text-indigo-600">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-800 text-xs">
+                    點擊選擇或將 CSV 檔案拖曳至此處
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    支援 UTF-8 編碼之標準 .csv 檔案（Excel / Google 試算表均可正常導出）
+                  </p>
+                </div>
+              </div>
+
+              {/* CSV Notice Banner */}
+              {csvNotice && (
+                <div className={`p-3 rounded-2xl text-xs flex items-center justify-between gap-2 ${
+                  csvNotice.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {csvNotice.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    )}
+                    <span>{csvNotice.text}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCsvNotice(null)}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Parsed Preview Section */}
+              {parsedCSVPreview && parsedCSVPreview.data.length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-white border border-indigo-200 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-900 text-xs">
+                        已解析預覽（共 {parsedCSVPreview.data.length} 題）
+                      </span>
+                      <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        模式：{csvImportMode === 'append' ? '增量加入' : '覆蓋自訂'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setParsedCSVPreview(null)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-[11px]"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyCSVImport}
+                        className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] shadow-xs flex items-center gap-1"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>確認匯入題庫</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Scrollable Preview List */}
+                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                    {parsedCSVPreview.data.map((q, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1"
+                      >
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 font-bold">
+                            {q.question_id}
+                          </span>
+                          <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-bold">
+                            {q.category}
+                          </span>
+                          <span className={q.attribute === 'asset' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                            {q.attribute === 'asset' ? '＋資產' : '－負債'} ({q.weight} 點)
+                          </span>
+                          <span className="text-slate-400 font-mono text-[9px] truncate max-w-[120px]">
+                            {q.galpin_principle}
+                          </span>
+                        </div>
+                        <p className="font-semibold text-slate-800 text-[11px]">{q.question_text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Table Column Reference Card */}
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1.5">
+                <div className="font-bold text-slate-800 flex items-center gap-1">
+                  <Info className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>CSV 表頭欄位格式指南：</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
+                  <div className="bg-white p-1.5 rounded-lg border border-slate-200">
+                    <strong className="text-slate-900 block">題目內容 (必填)</strong>
+                    <span className="text-slate-500">是非問答題型</span>
+                  </div>
+                  <div className="bg-white p-1.5 rounded-lg border border-slate-200">
+                    <strong className="text-slate-900 block">歸屬類別 (選填)</strong>
+                    <span className="text-slate-500">飲食 / 運動 / 飲水</span>
+                  </div>
+                  <div className="bg-white p-1.5 rounded-lg border border-slate-200">
+                    <strong className="text-slate-900 block">財務屬性 (選填)</strong>
+                    <span className="text-slate-500">資產 / 負債</span>
+                  </div>
+                  <div className="bg-white p-1.5 rounded-lg border border-slate-200">
+                    <strong className="text-slate-900 block">權重點數 (選填)</strong>
+                    <span className="text-slate-500">預設 10 (5~20)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: Store Expansion Packs (每次更新 50 題付費 10 元機制) */}
         {activeTab === 'store' && (
           <div className="space-y-3.5 flex-1 overflow-y-auto pr-1">
             {/* Header info banner */}
@@ -679,7 +1077,7 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
         {/* Modal Footer */}
         <div className="flex items-center justify-between pt-3 border-t border-slate-100 shrink-0 text-xs">
           <div className="text-slate-500 text-[11px]">
-            資料庫狀態：全部儲存於本地裝置，離線無限制抽題
+            資料庫狀態：全部儲存於本地裝置，支援 CSV 備份與離線抽題
           </div>
 
           <button

@@ -502,40 +502,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <span className="bg-amber-400 text-slate-950 font-bold text-[10px] px-2 py-0.5 rounded-full">
                 每次更新 50 題 (NT$ 10)
               </span>
-            </div>
-            <p className="text-xs text-indigo-200/80 leading-relaxed max-w-xl">
-              支援「自訂個人專屬問題」融入每日抽題，或單次 10 元解鎖 Andy Galpin 50 題專業生理學擴充包，深化每日 10 題問卷多樣性。
-            </p>
-          </div>
-        </div>
-
-        {onOpenQuestionBank && (
-          <button
-            type="button"
-            onClick={onOpenQuestionBank}
-            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 shrink-0 active:scale-95"
-          >
-            <span>管理題庫 / 加購 50 題</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-
-      {/* Question Bank Manager & 50-Question Pack Expansion Banner */}
-      <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-5 border border-indigo-500/30 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
-          <div className="p-3 rounded-2xl bg-indigo-600/60 text-indigo-200 ring-4 ring-indigo-500/20 shrink-0">
-            <Database className="w-5 h-5" />
-          </div>
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="font-bold text-sm text-white">健康題庫管理與擴充中心</h4>
-              <span className="bg-amber-400 text-slate-950 font-bold text-[10px] px-2 py-0.5 rounded-full">
-                每次更新 50 題 (NT$ 10)
+              <span className="bg-emerald-500 text-slate-950 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                支援 CSV 匯入/匯出
               </span>
             </div>
             <p className="text-xs text-indigo-200/80 leading-relaxed max-w-xl">
-              支援「自訂個人專屬問題」融入每日抽題，或單次 10 元解鎖 Andy Galpin 50 題專業生理學擴充包，深化每日 10 題問卷多樣性。
+              支援「自訂個人專屬問題」或「下載/上傳 CSV 題庫檔案」融入每日抽題，亦可單次 10 元解鎖 Andy Galpin 50 題專業生理學擴充包。
             </p>
           </div>
         </div>
