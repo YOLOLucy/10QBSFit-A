@@ -12,18 +12,71 @@ import {
   RefreshCw,
   Info,
   CheckCircle2,
-  CalendarCheck
+  CalendarCheck,
+  Users,
+  Dna,
+  RotateCcw
 } from 'lucide-react';
 import { INITIAL_GROCERY_LIST, WEEKLY_MEAL_PLAN } from '../data/mealAndGroceryData';
-import { GroceryItem, DayMealPlan } from '../types';
+import { GroceryItem, DayMealPlan, UserProfile, DailyRecord } from '../types';
 import { getTodayDateString, isWeekend } from '../utils/calculations';
+import { AiMealPlanModal, AiMealPlanResult } from './AiMealPlanModal';
 
 const STORAGE_KEY_GROCERY = 'health_balance_grocery_items_custom_v2';
+const STORAGE_KEY_MEALPLAN = 'health_balance_mealplan_custom_v2';
+const STORAGE_KEY_PLAN_META = 'health_balance_plan_meta_v2';
 
-export const WeekendGroceryMealPlan: React.FC = () => {
+interface PlanMeta {
+  servings: number;
+  themeTitle?: string;
+  galpinSummary?: string;
+  isAiCustomized?: boolean;
+}
+
+interface WeekendGroceryMealPlanProps {
+  userProfile?: UserProfile;
+  latestRecord?: DailyRecord | null;
+}
+
+export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
+  userProfile,
+  latestRecord,
+}) => {
   const [activeSubTab, setActiveSubTab] = useState<'grocery' | 'mealplan'>('grocery');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedDayIdx, setSelectedDayIdx] = useState<number>(0);
+  const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+
+  // Load plan metadata (servings, title, Galpin summary)
+  const [planMeta, setPlanMeta] = useState<PlanMeta>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PLAN_META);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return {
+      servings: 2,
+      themeTitle: 'Dr. Andy Galpin 7天全食物增肌修復與代謝平衡菜單',
+      galpinSummary: '依據 Dr. Andy Galpin 人體生理學：每餐 30-45g 蛋白質啟動 MPS、低 GI 原型碳水週期化補給、豐富抗發炎 Omega-3 與彩虹抗氧化植化素。',
+      isAiCustomized: false,
+    };
+  });
+
+  // Load weekly meal plan with local storage, default to WEEKLY_MEAL_PLAN
+  const [mealPlan, setMealPlan] = useState<DayMealPlan[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_MEALPLAN);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return WEEKLY_MEAL_PLAN;
+  });
 
   // Load grocery list with local storage, default to synchronized INITIAL_GROCERY_LIST
   const [groceryList, setGroceryList] = useState<GroceryItem[]>(() => {
@@ -48,10 +101,28 @@ export const WeekendGroceryMealPlan: React.FC = () => {
   const todayStr = getTodayDateString();
   const weekendNow = isWeekend(todayStr);
 
-  const saveList = (newList: GroceryItem[]) => {
+  const saveGroceryList = (newList: GroceryItem[]) => {
     setGroceryList(newList);
     try {
       localStorage.setItem(STORAGE_KEY_GROCERY, JSON.stringify(newList));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const saveMealPlan = (newPlan: DayMealPlan[]) => {
+    setMealPlan(newPlan);
+    try {
+      localStorage.setItem(STORAGE_KEY_MEALPLAN, JSON.stringify(newPlan));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const savePlanMeta = (meta: PlanMeta) => {
+    setPlanMeta(meta);
+    try {
+      localStorage.setItem(STORAGE_KEY_PLAN_META, JSON.stringify(meta));
     } catch (e) {
       console.error(e);
     }
@@ -61,7 +132,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
     const updated = groceryList.map((item) => 
       item.id === id ? { ...item, checked: !item.checked } : item
     );
-    saveList(updated);
+    saveGroceryList(updated);
   };
 
   const handleAddItem = (e: React.FormEvent) => {
@@ -78,7 +149,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
       mealUsage: ['自訂加購'],
     };
 
-    saveList([newItem, ...groceryList]);
+    saveGroceryList([newItem, ...groceryList]);
     setNewItemName('');
     setNewItemQty('');
     setNewItemNotes('');
@@ -87,20 +158,40 @@ export const WeekendGroceryMealPlan: React.FC = () => {
 
   const handleDeleteItem = (id: string) => {
     const updated = groceryList.filter((item) => item.id !== id);
-    saveList(updated);
+    saveGroceryList(updated);
   };
 
   const handleResetChecklist = () => {
     if (window.confirm('確定要重置所有食材的勾選狀態，開始新一週的採買嗎？')) {
       const reset = groceryList.map((item) => ({ ...item, checked: false }));
-      saveList(reset);
+      saveGroceryList(reset);
     }
   };
 
-  const handleSyncWithWeeklyMealPlan = () => {
-    if (window.confirm('確定要將採買清單完全同步為「一週7天建議菜單」所需的標準食材清單嗎？（將保留官方所有食材配方）')) {
-      saveList(INITIAL_GROCERY_LIST);
+  const handleRestoreDefaultPlan = () => {
+    if (window.confirm('確定要恢復為官方標準版 7 天建議菜單與採買清單嗎？')) {
+      saveMealPlan(WEEKLY_MEAL_PLAN);
+      saveGroceryList(INITIAL_GROCERY_LIST);
+      savePlanMeta({
+        servings: 2,
+        themeTitle: 'Dr. Andy Galpin 7天全食物增肌修復與代謝平衡菜單',
+        galpinSummary: '依據 Dr. Andy Galpin 人體生理學：每餐 30-45g 蛋白質啟動 MPS、低 GI 原型碳水週期化補給、豐富抗發炎 Omega-3 與彩虹抗氧化植化素。',
+        isAiCustomized: false,
+      });
+      setSelectedDayIdx(0);
     }
+  };
+
+  const handleApplyAiPlan = (result: AiMealPlanResult) => {
+    saveMealPlan(result.weeklyMealPlan);
+    saveGroceryList(result.groceryList);
+    savePlanMeta({
+      servings: result.servings,
+      themeTitle: result.themeTitle,
+      galpinSummary: result.galpinSummary,
+      isAiCustomized: true,
+    });
+    setSelectedDayIdx(0);
   };
 
   const handleCopyGroceryList = () => {
@@ -125,7 +216,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
       groupedByCategory[item.category]?.push(`- ${item.checked ? ' [已買] ' : ' [ ] '} ${item.name} (${item.quantity})${usageStr}`);
     });
 
-    let text = `🛒【一週超市健康採買清單】（與7天建議菜單100%同步）\n`;
+    let text = `🛒【${planMeta.servings || 2}人份 一週超市健康採買清單】（依 Dr. Andy Galpin 理論・與7天菜單100%同步）\n方案：${planMeta.themeTitle || 'Dr. Andy Galpin 菜單'}\n`;
     Object.entries(groupedByCategory).forEach(([catKey, items]) => {
       if (items.length > 0) {
         text += `\n${categoryNames[catKey] || '【其他】'}\n${items.join('\n')}`;
@@ -134,7 +225,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
     text += `\n\n— 透過 10QBS 健康資產負債表管理一週原型食材！`;
 
     navigator.clipboard.writeText(text);
-    alert('已複製一週採買清單到剪貼簿！可直接貼至備忘錄或 Line 採買時使用。');
+    alert(`已複製 ${planMeta.servings || 2} 人份一週採買清單到剪貼簿！可直接貼至備忘錄或 Line 採買時使用。`);
   };
 
   const filteredGrocery = groceryList.filter((item) => {
@@ -147,15 +238,15 @@ export const WeekendGroceryMealPlan: React.FC = () => {
   const checkedCount = groceryList.filter((i) => i.checked).length;
   const progressPercent = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0;
 
-  const currentMealPlan: DayMealPlan = WEEKLY_MEAL_PLAN[selectedDayIdx] || WEEKLY_MEAL_PLAN[0];
+  const currentMealPlan: DayMealPlan = mealPlan[selectedDayIdx] || mealPlan[0] || WEEKLY_MEAL_PLAN[0];
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-5">
       {/* Weekend Header Card */}
       <div className="bg-gradient-to-r from-emerald-800 to-teal-900 text-white rounded-3xl p-6 sm:p-7 shadow-sm relative overflow-hidden">
         <div className="relative z-10 flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
               <span className="p-1.5 rounded-lg bg-emerald-700/80 text-emerald-200">
                 <ChefHat className="w-4 h-4" />
               </span>
@@ -166,31 +257,75 @@ export const WeekendGroceryMealPlan: React.FC = () => {
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight">
               週末超市採買清單 & 一週建議菜單
             </h2>
-            <p className="text-xs text-emerald-100/90 mt-1 max-w-xl leading-relaxed">
-              採買清單與一週7天建議菜單食材<strong>100% 嚴密同步</strong>。事先備妥一週份量原型食材，自煮省時省錢，徹底遠離高油高糖外食負債！
+            <p className="text-xs text-emerald-100/90 max-w-xl leading-relaxed">
+              採買清單與一週7天建議菜單食材<strong>100% 嚴密同步</strong>。支援 <strong>Dr. Andy Galpin 1-4人份 AI 智能客製</strong>，事先備妥一週原型食材，遠離高油糖外食負債！
             </p>
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            {weekendNow ? (
-              <span className="px-3.5 py-1.5 rounded-xl bg-amber-400 text-slate-950 text-xs font-black shadow-sm flex items-center gap-1.5 animate-pulse">
-                <Sparkles className="w-4 h-4 text-slate-900" />
-                <span>今日逢週末！採買備餐黃金時機</span>
+            {/* AI Custom Planner Button */}
+            <button
+              onClick={() => setIsAiModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-md flex items-center gap-1.5 transition-all hover:scale-105"
+            >
+              <Sparkles className="w-4 h-4 text-slate-950" />
+              <span>🤖 AI 客製 Galpin 菜單 (1-4人份)</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-200 bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                <Users className="w-3.5 h-3.5 text-emerald-300" />
+                <span>{planMeta.servings || 2} 人份規格</span>
               </span>
-            ) : (
-              <span className="px-3 py-1 rounded-xl bg-white/10 text-emerald-100 text-xs font-medium border border-white/15">
-                隨時預先規劃下週食材
-              </span>
+              {planMeta.isAiCustomized && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-200 bg-amber-950/40 px-2.5 py-1 rounded-lg border border-amber-500/30">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>AI 專屬方案</span>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Active Galpin Plan Summary Banner */}
+        <div className="mt-5 p-3.5 rounded-2xl bg-black/25 backdrop-blur border border-white/10 text-xs text-emerald-100 flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-2.5 flex-1 min-w-[260px]">
+            <Dna className="w-4 h-4 text-emerald-300 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <div className="font-extrabold text-white flex items-center gap-1.5 flex-wrap">
+                <span>{planMeta.themeTitle || 'Dr. Andy Galpin 7天代謝平衡菜單'}</span>
+                <span className="text-[10px] bg-emerald-700/80 text-emerald-200 px-1.5 py-0.2 rounded">
+                  {planMeta.servings || 2} 人份
+                </span>
+              </div>
+              <p className="text-[11px] text-emerald-200/90 leading-tight">
+                {planMeta.galpinSummary || '每餐 30-45g 蛋白質刺激亮氨酸閾值，促進 MPS 與粒線體修復。'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 self-center">
+            <button
+              onClick={() => setIsAiModalOpen(true)}
+              className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-white text-[11px] font-bold transition-colors"
+            >
+              調整人數/目標
+            </button>
+            {planMeta.isAiCustomized && (
+              <button
+                onClick={handleRestoreDefaultPlan}
+                className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-950 text-emerald-300 text-[11px] font-semibold transition-colors flex items-center gap-1"
+                title="恢復官方標準 7 天菜單"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>恢復標準版</span>
+              </button>
             )}
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-200 bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/30">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              食材清單與7天菜單已同步
-            </span>
           </div>
         </div>
 
         {/* Sub-Tab Navigation Switcher */}
-        <div className="mt-6 flex items-center gap-2 p-1.5 bg-black/25 backdrop-blur rounded-2xl max-w-md">
+        <div className="mt-5 flex items-center gap-2 p-1.5 bg-black/25 backdrop-blur rounded-2xl max-w-md">
           <button
             onClick={() => setActiveSubTab('grocery')}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all ${
@@ -229,7 +364,9 @@ export const WeekendGroceryMealPlan: React.FC = () => {
               <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1.5">
                 <span className="flex items-center gap-1.5">
                   <span>採買進度完成度</span>
-                  <span className="text-[11px] text-slate-400 font-normal">（同步菜單共 {totalCount} 項食材）</span>
+                  <span className="text-[11px] text-slate-400 font-normal">
+                    （{planMeta.servings || 2}人份・同步菜單共 {totalCount} 項食材）
+                  </span>
                 </span>
                 <span className="text-emerald-600">{progressPercent}% ({checkedCount}/{totalCount} 項)</span>
               </div>
@@ -243,20 +380,20 @@ export const WeekendGroceryMealPlan: React.FC = () => {
 
             <div className="flex items-center gap-2 flex-wrap">
               <button
+                onClick={() => setIsAiModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold transition-all shadow-2xs"
+                title="以 AI 客製 1-4 人份 Dr. Andy Galpin 菜單與清單"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                <span>AI 客製 (1-4人份)</span>
+              </button>
+
+              <button
                 onClick={() => setIsAddingItem(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all"
               >
                 <Plus className="w-4 h-4" />
                 <span>新增自訂食材</span>
-              </button>
-
-              <button
-                onClick={handleSyncWithWeeklyMealPlan}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-xs font-bold transition-all"
-                title="與一週菜單重新同步官方食材清單"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-teal-600" />
-                <span>同步一週菜單</span>
               </button>
 
               <button
@@ -474,10 +611,10 @@ export const WeekendGroceryMealPlan: React.FC = () => {
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
             <div className="font-bold flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-600" />
-              <span>超市採買黃金準則（避開健康負債區）</span>
+              <span>超市採買黃金準則（Dr. Andy Galpin 原型食材原則）</span>
             </div>
             <p className="leading-relaxed text-amber-800">
-              進入超市時，請優先沿著<strong>「外圍生鮮冷藏走道」</strong>（肉品、鮮魚、生鮮蔬果、蛋奶），避開中間走道滿滿的餅乾、含糖飲料與泡麵加工區。吃進原型食材，就是為身體存下最豐厚的長期複利！
+              進入超市時，請優先沿著<strong>「外圍生鮮冷藏走道」</strong>（肉品、鮮魚、生鮮蔬果、蛋奶），避開中間走道滿滿的餅乾、含糖飲料與泡麵加工區。吃進原型食材，就是為身體存下最豐厚的長期健康資產！
             </p>
           </div>
         </div>
@@ -486,9 +623,33 @@ export const WeekendGroceryMealPlan: React.FC = () => {
       {/* VIEW 2: 7-Day Recommended Meal Plan */}
       {activeSubTab === 'mealplan' && (
         <div className="space-y-5">
+          {/* Quick Action bar for Meal Plan */}
+          <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-xs border border-slate-200 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-slate-900">
+                {planMeta.servings || 2} 人份菜單總覽
+              </span>
+              {planMeta.isAiCustomized && (
+                <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-bold">
+                  AI 智能生成
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsAiModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-xs transition-all"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+                <span>AI 重新生成 (1-4人份)</span>
+              </button>
+            </div>
+          </div>
+
           {/* Day of Week Selector */}
           <div className="flex items-center gap-1.5 p-1 bg-white rounded-2xl border border-slate-200 overflow-x-auto no-scrollbar">
-            {WEEKLY_MEAL_PLAN.map((plan, idx) => (
+            {mealPlan.map((plan, idx) => (
               <button
                 key={plan.dayOfWeek}
                 onClick={() => setSelectedDayIdx(idx)}
@@ -512,11 +673,11 @@ export const WeekendGroceryMealPlan: React.FC = () => {
             <div className="border-b border-slate-100 pb-4">
               <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
                 <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                  {currentMealPlan.dayOfWeek} 專屬食譜
+                  {currentMealPlan.dayOfWeek} 專屬食譜（{planMeta.servings || 2}人份）
                 </span>
                 <span className="text-xs text-slate-400 flex items-center gap-1">
                   <Flame className="w-3.5 h-3.5 text-orange-500" />
-                  <span>全日預估熱量 ~1600-1750 kcal・蛋白質 ~110-130g</span>
+                  <span>每人單日預估 ~1600-1850 kcal・蛋白質 ~110-140g</span>
                 </span>
               </div>
 
@@ -525,7 +686,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
               </h3>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100 flex items-start gap-2">
                 <Info className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span><strong>營養師備餐指南：</strong>{currentMealPlan.nutritionTip}</span>
+                <span><strong>Dr. Galpin 備餐指南：</strong>{currentMealPlan.nutritionTip}</span>
               </p>
             </div>
 
@@ -694,6 +855,22 @@ export const WeekendGroceryMealPlan: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* AI Meal & Grocery Planner Modal */}
+      <AiMealPlanModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onApplyPlan={handleApplyAiPlan}
+        currentServings={planMeta.servings || 2}
+        initialBiometrics={{
+          height: userProfile?.height || 172,
+          weight: latestRecord?.weight || userProfile?.weight || 68,
+          bodyFat: latestRecord?.bodyFat !== undefined ? latestRecord.bodyFat : (userProfile?.bodyFat || 18),
+          age: userProfile?.age || 32,
+          gender: userProfile?.gender || 'male',
+          activityLevel: userProfile?.activityLevel || 'moderate',
+        }}
+      />
     </div>
   );
 };

@@ -293,7 +293,10 @@ export default function App() {
 
           {/* View: Weekend Supermarket Grocery & Meal Plan */}
           {activeTab === 'grocery' && (
-            <WeekendGroceryMealPlan />
+            <WeekendGroceryMealPlan
+              userProfile={profile}
+              latestRecord={todayRecord || latestRecord}
+            />
           )}
         </div>
       </main>

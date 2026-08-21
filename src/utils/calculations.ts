@@ -67,10 +67,17 @@ export function getIdealWeightRange(heightCm: number): { min: number; max: numbe
   return { min, max, mid };
 }
 
-export function calculateBMR(profile: UserProfile): number {
-  const { weight, height, age, gender } = profile;
+export function calculateBMR(profile: Pick<UserProfile, 'weight' | 'height' | 'age' | 'gender' | 'bodyFat'>): number {
+  const { weight, height, age, gender, bodyFat } = profile;
   if (!weight || !height || !age) return 1400;
-  // Mifflin-St Jeor Equation
+
+  // If valid body fat percentage is provided, utilize Katch-McArdle formula for lean-mass precision
+  if (bodyFat && bodyFat >= 5 && bodyFat <= 55) {
+    const leanBodyMassKg = weight * (1 - bodyFat / 100);
+    return Math.round(370 + (21.6 * leanBodyMassKg));
+  }
+
+  // Otherwise, fallback to Mifflin-St Jeor Equation
   if (gender === 'male') {
     return Math.round(10 * weight + 6.25 * height - 5 * age + 5);
   } else {
@@ -78,15 +85,118 @@ export function calculateBMR(profile: UserProfile): number {
   }
 }
 
-export function calculateTDEE(profile: UserProfile): number {
+export function calculateTDEE(profile: Pick<UserProfile, 'weight' | 'height' | 'age' | 'gender' | 'activityLevel' | 'bodyFat'>): number {
   const bmr = calculateBMR(profile);
   const multipliers: Record<UserProfile['activityLevel'], number> = {
-    sedentary: 1.2, // 久坐無運動
+    sedentary: 1.2, // 久坐無規律運動
     light: 1.375, // 輕度活動（每週運動1-3天）
     moderate: 1.55, // 中度活動（每週運動3-5天）
     very_active: 1.725, // 高度活躍（每週運動6-7天）
   };
   return Math.round(bmr * (multipliers[profile.activityLevel] || 1.375));
+}
+
+export interface GalpinMacroPlan {
+  heightCm: number;
+  weightKg: number;
+  bodyFatPercent?: number;
+  bmr: number;
+  tdee: number;
+  targetCalories: number;
+  targetProteinG: number;
+  targetCarbsG: number;
+  targetFatsG: number;
+  proteinRatioPercent: number;
+  carbsRatioPercent: number;
+  fatsRatioPercent: number;
+  proteinPerKg: number;
+  perMealProteinG: number;
+  calorieDelta: number; // e.g. +300 or -400
+  calorieDeltaDesc: string;
+  galpinNotes: string;
+}
+
+export function calculateGalpinMacroTargets(
+  profile: Pick<UserProfile, 'height' | 'weight' | 'bodyFat' | 'gender' | 'age' | 'activityLevel'>,
+  fitnessGoal: string
+): GalpinMacroPlan {
+  const bmr = calculateBMR(profile);
+  const tdee = calculateTDEE(profile);
+  const weight = profile.weight || 68;
+
+  let calorieDelta = 0;
+  let calorieDeltaDesc = '維持熱量平衡 (Maintenance)';
+  let proteinMultiplier = 1.8; // g / kg
+
+  if (fitnessGoal.includes('增肌') || fitnessGoal.includes('Hypertrophy')) {
+    calorieDelta = 300;
+    calorieDeltaDesc = '+300 kcal 溫和熱量盈餘 (促進肌肉合成 MPS)';
+    proteinMultiplier = 2.0;
+  } else if (fitnessGoal.includes('減脂') || fitnessGoal.includes('Fat Loss')) {
+    calorieDelta = -400;
+    calorieDeltaDesc = '-400 kcal 穩定熱量赤字 (高蛋白保肌減脂)';
+    proteinMultiplier = 2.2; // higher protein during deficit to preserve lean mass
+  } else if (fitnessGoal.includes('運動表現') || fitnessGoal.includes('Performance')) {
+    calorieDelta = 150;
+    calorieDeltaDesc = '+150 kcal 訓練肝醣補給 (耐力爆發充能)';
+    proteinMultiplier = 1.8;
+  } else {
+    // 抗發炎長壽 / Longevity
+    calorieDelta = 0;
+    calorieDeltaDesc = '±0 kcal 代謝抗發炎平衡';
+    proteinMultiplier = 1.6;
+  }
+
+  // Ensure target calories don't drop dangerously below BMR
+  const rawTargetCalories = tdee + calorieDelta;
+  const targetCalories = Math.max(rawTargetCalories, Math.round(bmr * 1.05));
+
+  // 1. Protein calculation: Dr. Galpin's 1.6~2.2g/kg rule
+  let targetProteinG = Math.round(weight * proteinMultiplier);
+  // Cap between safe bounds
+  targetProteinG = Math.max(Math.min(targetProteinG, 260), 75);
+  const proteinKcal = targetProteinG * 4;
+
+  // 2. Fat calculation: 25% - 30% of total target calories (anti-inflammatory fats & hormone synthesis)
+  const fatKcalTarget = targetCalories * 0.28;
+  const targetFatsG = Math.round(fatKcalTarget / 9);
+  const fatsKcal = targetFatsG * 9;
+
+  // 3. Carbohydrate calculation: Remaining calories
+  const remainingKcalForCarbs = Math.max(targetCalories - proteinKcal - fatsKcal, 240);
+  const targetCarbsG = Math.round(remainingKcalForCarbs / 4);
+  const carbsKcal = targetCarbsG * 4;
+
+  // Accurate ratio percentages
+  const totalActualKcal = proteinKcal + carbsKcal + fatsKcal;
+  const proteinRatioPercent = Math.round((proteinKcal / totalActualKcal) * 100);
+  const carbsRatioPercent = Math.round((carbsKcal / totalActualKcal) * 100);
+  const fatsRatioPercent = 100 - proteinRatioPercent - carbsRatioPercent;
+
+  // Per meal protein recommendation (3 meals + 1 snack => approx targetProteinG / 3.5)
+  const perMealProteinG = Math.round(targetProteinG / 3.5);
+
+  const galpinNotes = `依據身高 ${profile.height}cm、體重 ${weight}kg${profile.bodyFat ? `、體脂 ${profile.bodyFat}%` : ''} 換算 TDEE 為 ${tdee} kcal。每日目標熱量設定為 ${targetCalories} kcal（${calorieDeltaDesc}）。蛋白質規劃 ${targetProteinG}g (${proteinMultiplier}g/kg)，每餐均勻攝取 ~${perMealProteinG}g 刺激亮氨酸 (Leucine) 扳機；搭配 ${targetCarbsG}g 低 GI 原型複合碳水與 ${targetFatsG}g 抗發炎好油脂。`;
+
+  return {
+    heightCm: profile.height,
+    weightKg: weight,
+    bodyFatPercent: profile.bodyFat,
+    bmr,
+    tdee,
+    targetCalories,
+    targetProteinG,
+    targetCarbsG,
+    targetFatsG,
+    proteinRatioPercent,
+    carbsRatioPercent,
+    fatsRatioPercent,
+    proteinPerKg: proteinMultiplier,
+    perMealProteinG,
+    calorieDelta,
+    calorieDeltaDesc,
+    galpinNotes,
+  };
 }
 
 export function calculateDailyWaterNeed(weightKg: number): number {

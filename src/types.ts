@@ -116,6 +116,8 @@ export interface MealItem {
   description: string;
   caloriesApprox: number;
   proteinApprox: number;
+  carbsApprox?: number;
+  fatsApprox?: number;
   tags: string[];
   ingredients?: string[]; // List of required ingredients
 }
@@ -128,4 +130,40 @@ export interface DayMealPlan {
   dinner: MealItem;
   snack: MealItem;
   nutritionTip: string;
+  totalCaloriesApprox?: number;
+  totalProteinApprox?: number;
+  totalCarbsApprox?: number;
+  totalFatsApprox?: number;
+}
+
+export interface PlanNutritionSummary {
+  heightCm: number;
+  weightKg: number;
+  bodyFatPercent?: number;
+  bmr: number;
+  tdee: number;
+  targetCalories: number;
+  targetProteinG: number;
+  targetCarbsG: number;
+  targetFatsG: number;
+  proteinRatioPercent?: number;
+  carbsRatioPercent?: number;
+  fatsRatioPercent?: number;
+  proteinPerKg?: number;
+  galpinNotes?: string;
+}
+
+export interface UserBiometricsInput {
+  height: number;
+  weight: number;
+  bodyFat?: number;
+  gender: 'male' | 'female' | 'other';
+  age: number;
+  activityLevel: 'sedentary' | 'light' | 'moderate' | 'very_active';
+  bmr: number;
+  tdee: number;
+  targetCalories: number;
+  targetProteinG: number;
+  targetCarbsG: number;
+  targetFatsG: number;
 }
