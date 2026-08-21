@@ -824,7 +824,7 @@ ${JSON.stringify(questions, null, 2)}`;
   });
 
   // Server-side AI Meal Plan & Synchronized Grocery Generator based on Dr. Andy Galpin's Principles
-  app.post("/api/gemini/generate-meal-and-grocery", async (req, res) => {
+  const handleMealPlanRequest = async (req: express.Request, res: express.Response) => {
     const { 
       servings = 2, 
       fitnessGoal = "增肌修復與代謝優化", 
@@ -1096,7 +1096,12 @@ Requirements:
         fallbackReason: "Google Gemini 服務暫時處於高負載尖峰，已為您無縫啟動 Dr. Andy Galpin 智能生理換算備案。"
       });
     }
-  });
+  };
+
+  app.post("/api/gemini/generate-meal-and-grocery", handleMealPlanRequest);
+  app.post("/api/generate-meal-and-grocery", handleMealPlanRequest);
+  app.post("/api/gemini/generate-meal-plan", handleMealPlanRequest);
+  app.post("/api/generate-meal-plan", handleMealPlanRequest);
 
   // Vite middleware for development vs static build for production
   if (process.env.NODE_ENV !== "production") {

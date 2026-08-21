@@ -24,7 +24,12 @@ import {
   Info
 } from 'lucide-react';
 import { DayMealPlan, GroceryItem, UserProfile, DailyRecord, PlanNutritionSummary } from '../types';
-import { calculateGalpinMacroTargets, GalpinMacroPlan, loadUserProfile } from '../utils/calculations';
+import { 
+  calculateGalpinMacroTargets, 
+  GalpinMacroPlan, 
+  loadUserProfile,
+  generateClientGalpinMealPlan,
+} from '../utils/calculations';
 
 export interface AiMealPlanResult {
   servings: number;
@@ -163,48 +168,79 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
     }, 1400);
 
     try {
-      const res = await fetch('/api/gemini/generate-meal-and-grocery', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          servings,
-          fitnessGoal,
-          dietPreference,
-          specialNotes,
-          language: 'zh-TW',
-          userBiometrics: {
-            height,
-            weight,
-            bodyFat,
-            age,
-            gender,
-            activityLevel,
-            bmr: macroPlan.bmr,
-            tdee: macroPlan.tdee,
-            targetCalories: macroPlan.targetCalories,
-            targetProteinG: macroPlan.targetProteinG,
-            targetCarbsG: macroPlan.targetCarbsG,
-            targetFatsG: macroPlan.targetFatsG,
-          },
-        }),
-      });
+      const biometricsPayload = {
+        height,
+        weight,
+        bodyFat,
+        age,
+        gender,
+        activityLevel,
+        bmr: macroPlan.bmr,
+        tdee: macroPlan.tdee,
+        targetCalories: macroPlan.targetCalories,
+        targetProteinG: macroPlan.targetProteinG,
+        targetCarbsG: macroPlan.targetCarbsG,
+        targetFatsG: macroPlan.targetFatsG,
+      };
 
-      clearInterval(stepInterval);
+      try {
+        const res = await fetch('/api/gemini/generate-meal-and-grocery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            servings,
+            fitnessGoal,
+            dietPreference,
+            specialNotes,
+            language: 'zh-TW',
+            userBiometrics: biometricsPayload,
+          }),
+        });
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || errorData.error || `HTTP ${res.status}`);
+        clearInterval(stepInterval);
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            setGeneratedResult(json.data);
+            return;
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('Backend API unavailable or returned error, activating Dr. Galpin client generator:', fetchErr);
       }
 
-      const json = await res.json();
-      if (json.success && json.data) {
-        setGeneratedResult(json.data);
-      } else {
-        throw new Error('無法取得 AI 規劃數據，請重試');
-      }
+      // Seamless fallback to client-side Dr. Galpin calculation engine (guarantees no 404 / 500 error ever blocks user)
+      const fallbackResult = generateClientGalpinMealPlan(
+        servings,
+        fitnessGoal,
+        dietPreference,
+        biometricsPayload
+      );
+      setGeneratedResult(fallbackResult as AiMealPlanResult);
     } catch (err: any) {
       console.error('AI Meal Generation Request Error:', err);
-      setErrorMessage(err.message || '生成失敗，請確認網路連線或稍後再試。');
+      // Final guarantee: always generate fallback plan
+      const safePlan = generateClientGalpinMealPlan(
+        servings,
+        fitnessGoal,
+        dietPreference,
+        {
+          height,
+          weight,
+          bodyFat,
+          age,
+          gender,
+          activityLevel,
+          bmr: macroPlan.bmr,
+          tdee: macroPlan.tdee,
+          targetCalories: macroPlan.targetCalories,
+          targetProteinG: macroPlan.targetProteinG,
+          targetCarbsG: macroPlan.targetCarbsG,
+          targetFatsG: macroPlan.targetFatsG,
+        }
+      );
+      setGeneratedResult(safePlan as AiMealPlanResult);
     } finally {
       clearInterval(stepInterval);
       setIsLoading(false);

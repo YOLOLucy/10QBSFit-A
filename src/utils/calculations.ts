@@ -377,3 +377,667 @@ export function saveHealthRecords(records: DailyRecord[]): void {
     console.error('Failed to save records', e);
   }
 }
+
+// Client-side Dr. Andy Galpin 7-day Meal Plan & Synchronized Grocery Generator
+export function generateClientGalpinMealPlan(
+  servings: number,
+  fitnessGoal: string,
+  dietPreference: string,
+  userBiometrics?: {
+    height?: number;
+    weight?: number;
+    bodyFat?: number;
+    age?: number;
+    gender?: string;
+    activityLevel?: string;
+    bmr?: number;
+    tdee?: number;
+    targetCalories?: number;
+    targetProteinG?: number;
+    targetCarbsG?: number;
+    targetFatsG?: number;
+  }
+) {
+  const s = Math.min(Math.max(Number(servings) || 1, 1), 4);
+  const height = userBiometrics?.height || 172;
+  const weight = userBiometrics?.weight || 68.5;
+  const bodyFat = userBiometrics?.bodyFat || 22;
+  const age = userBiometrics?.age || 29;
+  const gender = userBiometrics?.gender || 'female';
+
+  let bmr = userBiometrics?.bmr;
+  if (!bmr || isNaN(bmr)) {
+    if (bodyFat && bodyFat >= 5 && bodyFat <= 55) {
+      const lbm = weight * (1 - bodyFat / 100);
+      bmr = Math.round(370 + 21.6 * lbm);
+    } else {
+      bmr = gender === 'male'
+        ? Math.round(10 * weight + 6.25 * height - 5 * age + 5)
+        : Math.round(10 * weight + 6.25 * height - 5 * age - 161);
+    }
+  }
+
+  const tdee = userBiometrics?.tdee || Math.round(bmr * 1.375);
+
+  let targetCal = userBiometrics?.targetCalories;
+  let targetProt = userBiometrics?.targetProteinG;
+  let targetCarb = userBiometrics?.targetCarbsG;
+  let targetFat = userBiometrics?.targetFatsG;
+
+  if (!targetCal || isNaN(targetCal)) {
+    if (fitnessGoal.includes('增肌') || fitnessGoal.includes('Hypertrophy')) {
+      targetCal = tdee + 300;
+      targetProt = Math.round(weight * 2.0);
+    } else if (fitnessGoal.includes('減脂') || fitnessGoal.includes('Fat Loss')) {
+      targetCal = Math.max(tdee - 400, Math.round(bmr * 1.05));
+      targetProt = Math.round(weight * 2.2);
+    } else if (fitnessGoal.includes('運動表現') || fitnessGoal.includes('Performance')) {
+      targetCal = tdee + 150;
+      targetProt = Math.round(weight * 1.8);
+    } else {
+      targetCal = tdee;
+      targetProt = Math.round(weight * 1.6);
+    }
+    const fatKcal = targetCal * 0.28;
+    targetFat = Math.round(fatKcal / 9);
+    const remKcal = Math.max(targetCal - (targetProt * 4) - (targetFat * 9), 200);
+    targetCarb = Math.round(remKcal / 4);
+  }
+
+  const proteinRatioPercent = Math.round(((targetProt * 4) / targetCal) * 100);
+  const carbsRatioPercent = Math.round(((targetCarb * 4) / targetCal) * 100);
+  const fatsRatioPercent = 100 - proteinRatioPercent - carbsRatioPercent;
+  const proteinPerKg = Number((targetProt / weight).toFixed(1));
+
+  const chickenQty = `${(s * (targetProt > 130 ? 0.9 : 0.75)).toFixed(1)} kg（約${s * 3}-${s * 4}餐份）`;
+  const eggsQty = `${s * 8} 顆（每人每天早晨 1-2 顆）`;
+  const fishQty = `${s * 2} 片（挪威鮭魚/鯖魚）`;
+  const tofuQty = `${Math.max(s * 1.5, 2)} 盒`;
+  const oatsQty = `${s * 300} g（無糖大燕麥片）`;
+  const sweetPotatoes = `${s * 4} 條（台農57號中型地瓜）`;
+
+  return {
+    servings: s,
+    themeTitle: `Dr. Andy Galpin ${s}人份【${fitnessGoal}】7天全食物週期化菜單`,
+    galpinSummary: `依據您的身高 ${height}cm、體重 ${weight}kg${bodyFat ? `、體脂 ${bodyFat}%` : ''}，計算 TDEE 為 ${tdee} kcal，規劃每日目標攝取 ${targetCal} kcal。三大營養素配置：蛋白質 ${targetProt}g (${proteinPerKg}g/kg)、低 GI 原型碳水 ${targetCarb}g、抗發炎優質油脂 ${targetFat}g，精準換算 ${s} 人份 7 天份量。`,
+    nutritionTarget: {
+      heightCm: height,
+      weightKg: weight,
+      bodyFatPercent: bodyFat,
+      bmr,
+      tdee,
+      targetCalories: targetCal,
+      targetProteinG: targetProt,
+      targetCarbsG: targetCarb,
+      targetFatsG: targetFat,
+      proteinRatioPercent,
+      carbsRatioPercent,
+      fatsRatioPercent,
+      proteinPerKg,
+      galpinNotes: `每餐均勻分配約 ${Math.round(targetProt / 3.5)}g 高生物價蛋白質觸發亮氨酸 (Leucine) MPS 閾值，搭配低 GI 複合碳水維持胰島素與血糖穩定。`,
+    },
+    weeklyMealPlan: [
+      {
+        dayOfWeek: "週一",
+        dayTitle: "亮氨酸閾值啟動日 (Leucine Trigger & MPS)",
+        nutritionTip: "週一重點在於每餐充足蛋白質 (30-45g) 刺激肌肉蛋白質合成，搭配高纖低 GI 地瓜補充肝醣。",
+        totalCaloriesApprox: targetCal,
+        totalProteinApprox: targetProt,
+        totalCarbsApprox: targetCarb,
+        totalFatsApprox: targetFat,
+        breakfast: {
+          name: "放牧水煮蛋搭酪梨黑麥全穀吐司",
+          description: "2顆溫泉蛋/水煮蛋搭配半顆新鮮酪梨切片，淋上海鹽與特級初榨橄欖油。",
+          caloriesApprox: Math.round(targetCal * 0.25),
+          proteinApprox: Math.round(targetProt * 0.25),
+          carbsApprox: Math.round(targetCarb * 0.25),
+          fatsApprox: Math.round(targetFat * 0.28),
+          tags: ["#MPS亮氨酸", "#低GI全碳水", "#好油脂Omega9"],
+          ingredients: ["放牧雞蛋", "酪梨", "全穀吐司", "特級初榨橄欖油"]
+        },
+        lunch: {
+          name: "炙烤迷迭香舒肥雞胸彩虹藜麥溫沙拉",
+          description: "香草醃製舒肥雞胸肉切片，搭配蒸熟三色藜麥、綠花椰菜與牛番茄。",
+          caloriesApprox: Math.round(targetCal * 0.35),
+          proteinApprox: Math.round(targetProt * 0.35),
+          carbsApprox: Math.round(targetCarb * 0.35),
+          fatsApprox: Math.round(targetFat * 0.32),
+          tags: ["#高生物價蛋白", "#蘿蔔硫素", "#粒線體抗氧化"],
+          ingredients: ["雞胸肉", "三色藜麥", "綠花椰菜", "牛番茄", "特級初榨橄欖油"]
+        },
+        dinner: {
+          name: "香煎薄鹽挪威鮭魚佐清蒸地瓜與蒜炒菠菜",
+          description: "豐富 Omega-3 鮭魚排乾煎出天然魚油，搭配台農57號清蒸地瓜與富含鐵鎂的菠菜。",
+          caloriesApprox: Math.round(targetCal * 0.3),
+          proteinApprox: Math.round(targetProt * 0.3),
+          carbsApprox: Math.round(targetCarb * 0.3),
+          fatsApprox: Math.round(targetFat * 0.3),
+          tags: ["#Omega3抗發炎", "#低GI原型澱粉", "#鎂離子舒壓"],
+          ingredients: ["挪威鮭魚", "台農57號地瓜", "菠菜", "大蒜"]
+        },
+        snack: {
+          name: "無糖希臘優格佐藍莓奇亞籽",
+          description: "無糖純濃希臘優格 150g，拌入新鮮藍莓與奇亞籽，延緩夜間蛋白質分解。",
+          caloriesApprox: Math.round(targetCal * 0.1),
+          proteinApprox: Math.round(targetProt * 0.1),
+          carbsApprox: Math.round(targetCarb * 0.1),
+          fatsApprox: Math.round(targetFat * 0.1),
+          tags: ["#慢釋放酪蛋白", "#花青素", "#腸道益生菌"],
+          ingredients: ["無糖希臘式優格", "新鮮藍莓", "黑奇亞籽"]
+        }
+      },
+      {
+        dayOfWeek: "週二",
+        dayTitle: "粒線體修復與有氧充能 (Mitochondrial Recharge)",
+        nutritionTip: "大燕麥片提供 β-葡聚醣維持胰島素平穩，深海鯖魚 EPA/DHA 抑制肌肉微創發炎。",
+        totalCaloriesApprox: targetCal,
+        totalProteinApprox: targetProt,
+        totalCarbsApprox: targetCarb,
+        totalFatsApprox: targetFat,
+        breakfast: {
+          name: "高蛋白肉桂大燕麥奇亞籽果碗",
+          description: "無糖大燕麥片加熱水/高纖豆漿泡開，灑肉桂粉、奇亞籽與一小把無調味堅果。",
+          caloriesApprox: Math.round(targetCal * 0.25),
+          proteinApprox: Math.round(targetProt * 0.25),
+          carbsApprox: Math.round(targetCarb * 0.25),
+          fatsApprox: Math.round(targetFat * 0.28),
+          tags: ["#β葡聚醣", "#神經穩定", "#抗氧化肉桂"],
+          ingredients: ["無糖大燕麥片", "黑奇亞籽", "綜合堅果", "無糖高纖豆漿"]
+        },
+        lunch: {
+          name: "清炒毛豆仁牛里肌絲佐紫米糙米飯",
+          description: "精瘦牛里肌絲與高蛋白毛豆仁快炒，搭配紫米糙米飯與香煎板豆腐塊。",
+          caloriesApprox: Math.round(targetCal * 0.35),
+          proteinApprox: Math.round(targetProt * 0.35),
+          carbsApprox: Math.round(targetCarb * 0.35),
+          fatsApprox: Math.round(targetFat * 0.32),
+          tags: ["#血基質鐵質", "#大豆異黃酮", "#完整胺基酸"],
+          ingredients: ["精瘦牛里肌肉", "鮮凍毛豆仁", "非基改板豆腐", "紫米糙米"]
+        },
+        dinner: {
+          name: "鹽烤挪威白腹鯖魚佐南瓜塊與綜合生菜",
+          description: "高濃度天然魚油鯖魚烤至金黃酥脆，搭配清蒸栗子南瓜與初榨橄欖油彩蔬沙拉。",
+          caloriesApprox: Math.round(targetCal * 0.3),
+          proteinApprox: Math.round(targetProt * 0.3),
+          carbsApprox: Math.round(targetCarb * 0.3),
+          fatsApprox: Math.round(targetFat * 0.3),
+          tags: ["#Omega3極致", "#β胡蘿蔔素", "#電解質鉀離子"],
+          ingredients: ["挪威無刺鯖魚排", "栗子南瓜", "牛番茄", "特級初榨橄欖油"]
+        },
+        snack: {
+          name: "蒸放牧茶葉蛋搭微烘核桃果仁",
+          description: "一顆茶葉蛋/水煮蛋，搭配 10-12 顆核桃仁，提供天然褪黑激素前驅物與維生素 E。",
+          caloriesApprox: Math.round(targetCal * 0.1),
+          proteinApprox: Math.round(targetProt * 0.1),
+          carbsApprox: Math.round(targetCarb * 0.1),
+          fatsApprox: Math.round(targetFat * 0.1),
+          tags: ["#卵磷脂", "#維生素E", "#腦力專注"],
+          ingredients: ["放牧雞蛋", "綜合堅果"]
+        }
+      },
+      {
+        dayOfWeek: "週三",
+        dayTitle: "多樣性植化素與抗發炎 (Rainbow Phytonutrients)",
+        nutritionTip: "十字花科（綠花椰菜、高麗菜）富含蘿蔔硫素 (Sulforaphane)，大幅提升肝臟第二階段排毒酶與抗氧化能力。",
+        totalCaloriesApprox: targetCal,
+        totalProteinApprox: targetProt,
+        totalCarbsApprox: targetCarb,
+        totalFatsApprox: targetFat,
+        breakfast: {
+          name: "義式番茄嫩菠菜雙蛋烘蛋",
+          description: "2顆雞蛋加入新鮮菠菜葉與牛番茄丁，以小火橄欖油慢煎成蓬鬆烘蛋。",
+          caloriesApprox: Math.round(targetCal * 0.25),
+          proteinApprox: Math.round(targetProt * 0.25),
+          carbsApprox: Math.round(targetCarb * 0.25),
+          fatsApprox: Math.round(targetFat * 0.28),
+          tags: ["#葉黃素", "#葉酸儲備", "#優質卵磷脂"],
+          ingredients: ["放牧雞蛋", "菠菜", "牛番茄", "特級初榨橄欖油"]
+        },
+        lunch: {
+          name: "檸檬蒜香舒肥雞胸搭甘甜台農地瓜",
+          description: "清爽檸檬百里香風味舒肥雞胸肉，搭配烤熟地瓜一條與蒜炒高麗菜。",
+          caloriesApprox: Math.round(targetCal * 0.35),
+          proteinApprox: Math.round(targetProt * 0.35),
+          carbsApprox: Math.round(targetCarb * 0.35),
+          fatsApprox: Math.round(targetFat * 0.32),
+          tags: ["#維生素C協同", "#低脂高蛋白", "#膳食纖維"],
+          ingredients: ["雞胸肉", "台農57號地瓜", "高麗菜", "大蒜"]
+        },
+        dinner: {
+          name: "金黃板豆腐燉綜合野菇佐三色藜麥",
+          description: "煎至金黃的板豆腐與鴻禧菇、金針菇同燉，搭配藜麥飯與蒸花椰菜。",
+          caloriesApprox: Math.round(targetCal * 0.3),
+          proteinApprox: Math.round(targetProt * 0.3),
+          carbsApprox: Math.round(targetCarb * 0.3),
+          fatsApprox: Math.round(targetFat * 0.3),
+          tags: ["#多醣體免疫", "#植物異黃酮", "#零膽固醇"],
+          ingredients: ["非基改板豆腐", "綜合菇類", "三色藜麥", "綠花椰菜"]
+        },
+        snack: {
+          name: "高纖無糖豆漿杯拌水煮毛豆",
+          description: "無糖豆漿 250ml 搭配一小碗原味鹽水煮毛豆仁，蛋白質高達 15g。",
+          caloriesApprox: Math.round(targetCal * 0.1),
+          proteinApprox: Math.round(targetProt * 0.1),
+          carbsApprox: Math.round(targetCarb * 0.1),
+          fatsApprox: Math.round(targetFat * 0.1),
+          tags: ["#植物雙蛋白", "#低熱量高飽足", "#異黃酮"],
+          ingredients: ["無糖高纖豆漿", "鮮凍毛豆仁"]
+        }
+      },
+      {
+        dayOfWeek: "週四",
+        dayTitle: "耐力與神經傳導優化 (Neuromuscular Peak)",
+        nutritionTip: "香蕉與番茄富含天然鉀離子與維生素 B 群，調節神經肌肉興奮性，避免夜間抽筋並維持體液平衡。",
+        totalCaloriesApprox: targetCal,
+        totalProteinApprox: targetProt,
+        totalCarbsApprox: targetCarb,
+        totalFatsApprox: targetFat,
+        breakfast: {
+          name: "香蕉花生全穀抹醬厚片佐水煮蛋",
+          description: "無糖天然花生醬抹於全穀黑麥吐司，切入新鮮香蕉片，搭配1顆放牧水煮蛋。",
+          caloriesApprox: Math.round(targetCal * 0.25),
+          proteinApprox: Math.round(targetProt * 0.25),
+          carbsApprox: Math.round(targetCarb * 0.25),
+          fatsApprox: Math.round(targetFat * 0.28),
+          tags: ["#電解質鉀離子", "#單元不飽和脂肪", "#複合能量"],
+          ingredients: ["全穀吐司", "新鮮香蕉", "放牧雞蛋", "綜合堅果"]
+        },
+        lunch: {
+          name: "川味蔥椒牛腱肉片佐蒸糙米飯與燙雙色蔬菜",
+          description: "滷牛腱肉切薄片，搭配糙米飯、燙綠花椰與高麗菜，淋上初榨冷壓橄欖油。",
+          caloriesApprox: Math.round(targetCal * 0.35),
+          proteinApprox: Math.round(targetProt * 0.35),
+          carbsApprox: Math.round(targetCarb * 0.35),
+          fatsApprox: Math.round(targetFat * 0.32),
+          tags: ["#高密度肌酸", "#支鏈胺基酸BCAA", "#飽足感持久"],
+          ingredients: ["精瘦牛里肌肉", "三色藜麥", "綠花椰菜", "高麗菜"]
+        },
+        dinner: {
+          name: "香煎鮮鱸魚柳佐清蒸地瓜與牛番茄蔬菜湯",
+          description: "鮮嫩鱸魚肉易消化好吸收，搭配地瓜與番茄洋蔥排毒蔬菜湯。",
+          caloriesApprox: Math.round(targetCal * 0.3),
+          proteinApprox: Math.round(targetProt * 0.3),
+          carbsApprox: Math.round(targetCarb * 0.3),
+          fatsApprox: Math.round(targetFat * 0.3),
+          tags: ["#膠原多肽", "#茄紅素抗氧化", "#極速腸道吸收"],
+          ingredients: ["挪威鮭魚", "台農57號地瓜", "牛番茄", "大蒜"]
+        },
+        snack: {
+          name: "希臘優格佐野生藍莓",
+          description: "濃郁希臘優格 120g 加上新鮮藍莓，消除訓練氧化自由基。",
+          caloriesApprox: Math.round(targetCal * 0.1),
+          proteinApprox: Math.round(targetProt * 0.1),
+          carbsApprox: Math.round(targetCarb * 0.1),
+          fatsApprox: Math.round(targetFat * 0.1),
+          tags: ["#大腦神經保護", "#多酚類", "#微量元素"],
+          ingredients: ["無糖希臘式優格", "新鮮藍莓"]
+        }
+      },
+      {
+        dayOfWeek: "週五",
+        dayTitle: "自律神經調衡與代謝微調 (Homeostasis & Glycemic Control)",
+        nutritionTip: "週五晚上通常外食誘惑多，先以高蛋白質與豐富膳食纖維打底，可避免血糖雲霄飛車效應。",
+        totalCaloriesApprox: targetCal,
+        totalProteinApprox: targetProt,
+        totalCarbsApprox: targetCarb,
+        totalFatsApprox: targetFat,
+        breakfast: {
+          name: "經典酪梨鮮蛋全穀三明治",
+          description: "成熟酪梨壓泥抹底，夾入水煮蛋切片與番茄切片，撒上海鹽黑胡椒。",
+          caloriesApprox: Math.round(targetCal * 0.25),
+          proteinApprox: Math.round(targetProt * 0.25),
+          carbsApprox: Math.round(targetCarb * 0.25),
+          fatsApprox: Math.round(targetFat * 0.28),
+          tags: ["#高單元不飽和", "#維生素B6", "#全日平穩血糖"],
+          ingredients: ["酪梨", "放牧雞蛋", "牛番茄", "全穀吐司"]
+        },
+        lunch: {
+          name: "黑胡椒洋蔥舒肥雞肉塊佐栗子南瓜泥",
+          description: "舒肥雞肉切丁快炒甜洋蔥與彩椒，搭配帶皮清蒸栗子南瓜泥與花椰菜。",
+          caloriesApprox: Math.round(targetCal * 0.35),
+          proteinApprox: Math.round(targetProt * 0.35),
+          carbsApprox: Math.round(targetCarb * 0.35),
+          fatsApprox: Math.round(targetFat * 0.32),
+          tags: ["#槲皮素抗炎", "#葉黃素明目", "#高纖維飽足"],
+          ingredients: ["雞胸肉", "栗子南瓜", "洋蔥", "綠花椰菜"]
+        },
+        dinner: {
+          name: "日式薄鹽鯖魚燒佐毛豆豆腐炊飯",
+          description: "整片白腹鯖魚烘烤出油脂香氣，搭配毛豆、板豆腐丁同煮之高纖炊飯與菠菜。",
+          caloriesApprox: Math.round(targetCal * 0.3),
+          proteinApprox: Math.round(targetProt * 0.3),
+          carbsApprox: Math.round(targetCarb * 0.3),
+          fatsApprox: Math.round(targetFat * 0.3),
+          tags: ["#腦磷脂DHA", "#降三酸甘油酯", "#天然抗凝血"],
+          ingredients: ["挪威無刺鯖魚排", "鮮凍毛豆仁", "非基改板豆腐", "菠菜"]
+        },
+        snack: {
+          name: "原味烘焙無調味堅果 15g",
+          description: "杏仁果、核桃、腰果黃金配比，補充微量鋅鎂與抗氧化硒元素。",
+          caloriesApprox: Math.round(targetCal * 0.1),
+          proteinApprox: Math.round(targetProt * 0.1),
+          carbsApprox: Math.round(targetCarb * 0.1),
+          fatsApprox: Math.round(targetFat * 0.1),
+          tags: ["#微量元素鋅", "#細胞膜保護", "#健康油脂"],
+          ingredients: ["綜合堅果"]
+        }
+      },
+      {
+        dayOfWeek: "週六",
+        dayTitle: "週末運動後超量恢復 (Supercompensation Weekend)",
+        nutritionTip: "運動後 45 分鐘內攝取 3:1 碳水與蛋白質比例，能達到最高效率的肌肉肝醣超量恢復與肌肉修復。",
+        totalCaloriesApprox: targetCal,
+        totalProteinApprox: targetProt,
+        totalCarbsApprox: targetCarb,
+        totalFatsApprox: targetFat,
+        breakfast: {
+          name: "高纖燕麥藍莓香蕉能量杯佐無糖豆漿",
+          description: "無糖大燕麥片混合無糖高纖豆漿，鋪上新鮮藍莓與香蕉切片，清爽高能量。",
+          caloriesApprox: Math.round(targetCal * 0.25),
+          proteinApprox: Math.round(targetProt * 0.25),
+          carbsApprox: Math.round(targetCarb * 0.25),
+          fatsApprox: Math.round(targetFat * 0.28),
+          tags: ["#肝醣迅速超補", "#抗疲勞果糖", "#腸道益生元"],
+          ingredients: ["無糖大燕麥片", "新鮮藍莓", "新鮮香蕉", "無糖高纖豆漿"]
+        },
+        lunch: {
+          name: "炙燒舒肥雞胸佐三色藜麥溫暖雙蔬碗",
+          description: "鮮嫩雞胸肉搭配三色藜麥、烤洋蔥、牛番茄與清蒸綠花椰菜，淋上冷壓橄欖油。",
+          caloriesApprox: Math.round(targetCal * 0.35),
+          proteinApprox: Math.round(targetProt * 0.35),
+          carbsApprox: Math.round(targetCarb * 0.35),
+          fatsApprox: Math.round(targetFat * 0.32),
+          tags: ["#精氨酸循環", "#肌肉蛋白質超補", "#彩虹植化素"],
+          ingredients: ["雞胸肉", "三色藜麥", "綠花椰菜", "牛番茄", "特級初榨橄欖油"]
+        },
+        dinner: {
+          name: "頂級香煎厚切鮭魚排佐台農地瓜與蒜香菠菜",
+          description: "富含天然蝦紅素與 Omega-3 的鮭魚排，搭配高纖地瓜與蒜香菠菜。",
+          caloriesApprox: Math.round(targetCal * 0.3),
+          proteinApprox: Math.round(targetProt * 0.3),
+          carbsApprox: Math.round(targetCarb * 0.3),
+          fatsApprox: Math.round(targetFat * 0.3),
+          tags: ["#天然蝦紅素", "#抗肌酸痛", "#高抗發炎指標"],
+          ingredients: ["挪威鮭魚", "台農57號地瓜", "菠菜", "大蒜"]
+        },
+        snack: {
+          name: "黑奇亞籽無糖高纖豆漿布丁",
+          description: "豆漿浸泡奇亞籽形成濃稠凝膠狀，富含可溶性纖維與植物 Omega-3。",
+          caloriesApprox: Math.round(targetCal * 0.1),
+          proteinApprox: Math.round(targetProt * 0.1),
+          carbsApprox: Math.round(targetCarb * 0.1),
+          fatsApprox: Math.round(targetFat * 0.1),
+          tags: ["#植物ALA", "#水溶性纖維", "#腸道健康"],
+          ingredients: ["黑奇亞籽", "無糖高纖豆漿"]
+        }
+      },
+      {
+        dayOfWeek: "週日",
+        dayTitle: "一週總結與備餐消化排毒 (Gut & Liver Reset)",
+        nutritionTip: "週日以豐富膳食纖維、十字花科蔬菜與優質發酵乳品促進腸道蠕動，為新的一週奠定健康資產基石。",
+        totalCaloriesApprox: targetCal,
+        totalProteinApprox: targetProt,
+        totalCarbsApprox: targetCarb,
+        totalFatsApprox: targetFat,
+        breakfast: {
+          name: "酪梨水煮雙蛋佐蒜香烤全穀黑麥吐司",
+          description: "抹上蒜香橄欖油微烤全穀麵包，鋪後半顆酪梨泥與2顆黃金熟度溫泉蛋。",
+          caloriesApprox: Math.round(targetCal * 0.25),
+          proteinApprox: Math.round(targetProt * 0.25),
+          carbsApprox: Math.round(targetCarb * 0.25),
+          fatsApprox: Math.round(targetFat * 0.28),
+          tags: ["#多酚大蒜素", "#葉黃素雙倍", "#飽足抗餓"],
+          ingredients: ["酪梨", "放牧雞蛋", "全穀吐司", "大蒜"]
+        },
+        lunch: {
+          name: "鮮菇豆腐番茄嫩牛煲佐金黃栗子南瓜",
+          description: "非基改板豆腐與精瘦牛里肌、綜合菇類、牛番茄燉煮成清甜湯煲，佐以南瓜塊。",
+          caloriesApprox: Math.round(targetCal * 0.35),
+          proteinApprox: Math.round(targetProt * 0.35),
+          carbsApprox: Math.round(targetCarb * 0.35),
+          fatsApprox: Math.round(targetFat * 0.32),
+          tags: ["#茄紅素活化", "#多醣體", "#優質電解質"],
+          ingredients: ["非基改板豆腐", "精瘦牛里肌肉", "綜合菇類", "牛番茄", "栗子南瓜"]
+        },
+        dinner: {
+          name: "香煎無刺鯖魚柳佐蒜炒高麗菜與紫米飯",
+          description: "酥脆鯖魚搭配甘甜高麗菜與紫米糙米飯，清爽零負擔。",
+          caloriesApprox: Math.round(targetCal * 0.3),
+          proteinApprox: Math.round(targetProt * 0.3),
+          carbsApprox: Math.round(targetCarb * 0.3),
+          fatsApprox: Math.round(targetFat * 0.3),
+          tags: ["#Omega3極品", "#低鈉清淡", "#高纖助消化"],
+          ingredients: ["挪威無刺鯖魚排", "高麗菜", "紫米糙米", "大蒜"]
+        },
+        snack: {
+          name: "無糖希臘優格拌核桃堅果碎",
+          description: "純濃希臘優格 120g 搭配微碎核桃，天然色胺酸有助夜間深層睡眠。",
+          caloriesApprox: Math.round(targetCal * 0.1),
+          proteinApprox: Math.round(targetProt * 0.1),
+          carbsApprox: Math.round(targetCarb * 0.1),
+          fatsApprox: Math.round(targetFat * 0.1),
+          tags: ["#深層睡眠修復", "#色胺酸", "#酪蛋白防分解"],
+          ingredients: ["無糖希臘式優格", "綜合堅果"]
+        }
+      }
+    ],
+    groceryList: [
+      {
+        id: `ai_g_p1_${Date.now()}`,
+        category: "protein" as const,
+        name: "冷藏放牧機能雞蛋",
+        quantity: eggsQty,
+        checked: false,
+        notes: "優質蛋白質與卵磷脂核心來源，富含葉黃素",
+        mealUsage: ["週一早餐", "週二早餐", "週三早餐", "週四早餐", "週五早餐", "週日早餐"]
+      },
+      {
+        id: `ai_g_p2_${Date.now()}`,
+        category: "protein" as const,
+        name: "生鮮去皮清雞胸肉",
+        quantity: chickenQty,
+        checked: false,
+        notes: "高生物價低脂蛋白質，每100g含約23g蛋白質",
+        mealUsage: ["週一午餐", "週三午餐", "週五午餐", "週六午餐"]
+      },
+      {
+        id: `ai_g_p3_${Date.now()}`,
+        category: "protein" as const,
+        name: "生鮮無刺挪威鮭魚排",
+        quantity: fishQty,
+        checked: false,
+        notes: "極致抗發炎 Omega-3 (EPA/DHA) 與天然蝦紅素",
+        mealUsage: ["週一晚餐", "週四晚餐", "週六晚餐"]
+      },
+      {
+        id: `ai_g_p4_${Date.now()}`,
+        category: "protein" as const,
+        name: "生鮮急凍無刺鯖魚切片",
+        quantity: `${s * 3} 片`,
+        checked: false,
+        notes: "高濃度天然魚油，護心抗氧化抗發炎",
+        mealUsage: ["週二晚餐", "週五晚餐", "週日晚餐"]
+      },
+      {
+        id: `ai_g_p5_${Date.now()}`,
+        category: "protein" as const,
+        name: "生鮮精瘦牛里肌肉片/牛腱",
+        quantity: `${s * 300} g`,
+        checked: false,
+        notes: "天然肌酸與血基質鐵，提升運動爆發力與紅血球攜氧",
+        mealUsage: ["週二午餐", "週四午餐", "週日午餐"]
+      },
+      {
+        id: `ai_g_p6_${Date.now()}`,
+        category: "protein" as const,
+        name: "非基改傳統板豆腐",
+        quantity: tofuQty,
+        checked: false,
+        notes: "高鈣與大豆異黃酮，質地扎實蛋白質豐富",
+        mealUsage: ["週二午餐", "週三晚餐", "週五晚餐", "週日午餐"]
+      },
+      {
+        id: `ai_g_p7_${Date.now()}`,
+        category: "protein" as const,
+        name: "鮮凍原味毛豆仁",
+        quantity: `${s * 250} g`,
+        checked: false,
+        notes: "植物界蛋白質之王，豐富膳食纖維與BCAA",
+        mealUsage: ["週二午餐", "週三點心", "週五晚餐"]
+      },
+      {
+        id: `ai_g_p8_${Date.now()}`,
+        category: "protein" as const,
+        name: "無糖純濃希臘式優格",
+        quantity: `${s * 500} g（約1大罐）`,
+        checked: false,
+        notes: "富含緩慢吸收之酪蛋白與腸道益生菌",
+        mealUsage: ["週一點心", "週四點心", "週日點心"]
+      },
+      {
+        id: `ai_g_v1_${Date.now()}`,
+        category: "vegetable" as const,
+        name: "有機綠花椰菜 (Broccoli)",
+        quantity: `${s * 2} 顆`,
+        checked: false,
+        notes: "富含蘿蔔硫素 (Sulforaphane)，提升肝臟解毒酵素",
+        mealUsage: ["週一午餐", "週三晚餐", "週四午餐", "週五午餐", "週六午餐"]
+      },
+      {
+        id: `ai_g_v2_${Date.now()}`,
+        category: "vegetable" as const,
+        name: "生鮮菠菜",
+        quantity: `${s * 2} 把`,
+        checked: false,
+        notes: "高鎂、高葉酸與硝酸鹽，放鬆血管並助深層睡眠",
+        mealUsage: ["週一晚餐", "週三早餐", "週五晚餐", "週六晚餐"]
+      },
+      {
+        id: `ai_g_v3_${Date.now()}`,
+        category: "vegetable" as const,
+        name: "嚴選牛番茄",
+        quantity: `${s * 4} 顆`,
+        checked: false,
+        notes: "富含脂溶性茄紅素 (Lycopene)，心血管守護神",
+        mealUsage: ["週一午餐", "週三早餐", "週四晚餐", "週五早餐", "週日午餐"]
+      },
+      {
+        id: `ai_g_v4_${Date.now()}`,
+        category: "vegetable" as const,
+        name: "鮮脆高麗菜",
+        quantity: `${Math.max(Math.ceil(s/2), 1)} 顆`,
+        checked: false,
+        notes: "含維生素 U (S-甲基甲硫氨酸) 保護胃黏膜",
+        mealUsage: ["週三午餐", "週四午餐", "週日晚餐"]
+      },
+      {
+        id: `ai_g_v5_${Date.now()}`,
+        category: "vegetable" as const,
+        name: "綜合有機野菇 (鴻禧菇/金針菇/香菇)",
+        quantity: `${s * 2} 包`,
+        checked: false,
+        notes: "富含β-葡聚醣多醣體，增強免疫巨噬細胞活性",
+        mealUsage: ["週三晚餐", "週日午餐"]
+      },
+      {
+        id: `ai_g_c1_${Date.now()}`,
+        category: "carb" as const,
+        name: "台農57號黃金地瓜",
+        quantity: sweetPotatoes,
+        checked: false,
+        notes: "優質低GI複合碳水，高鉀高纖維，慢速釋放葡萄糖",
+        mealUsage: ["週一晚餐", "週三午餐", "週四晚餐", "週六晚餐"]
+      },
+      {
+        id: `ai_g_c2_${Date.now()}`,
+        category: "carb" as const,
+        name: "無糖大燕麥片 (Rolled Oats)",
+        quantity: oatsQty,
+        checked: false,
+        notes: "富含β-葡聚醣，穩定餐後血糖與胰島素",
+        mealUsage: ["週二早餐", "週四早餐", "週六早餐"]
+      },
+      {
+        id: `ai_g_c3_${Date.now()}`,
+        category: "carb" as const,
+        name: "三色有機藜麥 / 有機糙米",
+        quantity: `${s * 300} g`,
+        checked: false,
+        notes: "全套完整必需胺基酸與豐富膳食纖維",
+        mealUsage: ["週一午餐", "週二午餐", "週三晚餐", "週四午餐", "週六午餐"]
+      },
+      {
+        id: `ai_g_c4_${Date.now()}`,
+        category: "carb" as const,
+        name: "栗子南瓜",
+        quantity: `${Math.max(Math.ceil(s/2), 1)} 顆`,
+        checked: false,
+        notes: "含豐富β-胡蘿蔔素與鉀，清甜可口",
+        mealUsage: ["週二晚餐", "週五午餐", "週日午餐"]
+      },
+      {
+        id: `ai_g_f1_${Date.now()}`,
+        category: "fat_seasoning" as const,
+        name: "特級初榨冷壓橄欖油 (EVOO)",
+        quantity: "1 瓶 (500ml)",
+        checked: false,
+        notes: "高單元不飽和脂肪酸 (Omega-9)，冷拌或中小火烹調",
+        mealUsage: ["每日烹調與沙拉淋油"]
+      },
+      {
+        id: `ai_g_f2_${Date.now()}`,
+        category: "fat_seasoning" as const,
+        name: "進口新鮮酪梨 (Avocado)",
+        quantity: `${s * 2} 顆`,
+        checked: false,
+        notes: "護心健康油脂與鉀，切丁搭配早餐或吐司",
+        mealUsage: ["週一早餐", "週五早餐", "週日早餐"]
+      },
+      {
+        id: `ai_g_f3_${Date.now()}`,
+        category: "fat_seasoning" as const,
+        name: "綜合無調味堅果 (核桃/杏仁/腰果)",
+        quantity: `${s * 150} g`,
+        checked: false,
+        notes: "核桃含植物性 Omega-3 (ALA)，每日一小把",
+        mealUsage: ["週二點心", "週日點心"]
+      },
+      {
+        id: `ai_g_f4_${Date.now()}`,
+        category: "fat_seasoning" as const,
+        name: "有機黑奇亞籽 (Chia Seeds)",
+        quantity: "1 包 (250g)",
+        checked: false,
+        notes: "高纖遇水膨脹，延緩胃排空與吸收",
+        mealUsage: ["週一點心", "週二早餐", "週六點心"]
+      },
+      {
+        id: `ai_g_fr1_${Date.now()}`,
+        category: "fruit_beverage" as const,
+        name: "新鮮野生藍莓 / 綜合莓果",
+        quantity: `${s * 2} 盒`,
+        checked: false,
+        notes: "高花青素低GI水果，大腦抗氧化神物",
+        mealUsage: ["週一點心", "週二早餐", "週六早餐"]
+      },
+      {
+        id: `ai_g_fr2_${Date.now()}`,
+        category: "fruit_beverage" as const,
+        name: "新鮮香蕉 (黃綠香蕉)",
+        quantity: `${s * 4} 根`,
+        checked: false,
+        notes: "運動前後迅速補充肝醣與電解質鉀",
+        mealUsage: ["週四早餐", "週六早餐"]
+      },
+      {
+        id: `ai_g_fr3_${Date.now()}`,
+        category: "fruit_beverage" as const,
+        name: "無糖高纖豆漿",
+        quantity: `${s * 1000} ml`,
+        checked: false,
+        notes: "補充水分與大豆卵磷脂",
+        mealUsage: ["週二早餐", "週六點心"]
+      }
+    ]
+  };
+}
