@@ -158,9 +158,9 @@ export function formatDateDisplay(dateStr: string): string {
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-  const weekDays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const weekDay = weekDays[d.getDay()];
-  return `${Number(parts[1])}月${Number(parts[2])}日 (${weekDay})`;
+  return `${Number(parts[1])}/${Number(parts[2])}(${weekDay})`;
 }
 
 export function isWeekend(dateStr?: string): boolean {

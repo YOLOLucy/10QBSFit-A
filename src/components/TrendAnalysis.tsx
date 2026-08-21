@@ -20,7 +20,9 @@ import {
   Sparkles, 
   Award,
   ChevronRight,
-  Info
+  Info,
+  ArrowLeft,
+  FileSpreadsheet
 } from 'lucide-react';
 import { DailyRecord, UserProfile } from '../types';
 import { calculateBMI, getBMICategory, getHealthGrade, formatDateDisplay } from '../utils/calculations';
@@ -29,12 +31,14 @@ interface TrendAnalysisProps {
   records: DailyRecord[];
   profile: UserProfile;
   onSelectRecord?: (record: DailyRecord) => void;
+  onGoBack?: () => void;
 }
 
 export const TrendAnalysis: React.FC<TrendAnalysisProps> = ({
   records,
   profile,
   onSelectRecord,
+  onGoBack,
 }) => {
   const [timeRange, setTimeRange] = useState<'7' | '14' | '30' | 'all'>('7');
   const [activeMetric, setActiveMetric] = useState<'all' | 'weight' | 'assets_liabilities'>('all');
@@ -85,12 +89,23 @@ export const TrendAnalysis: React.FC<TrendAnalysisProps> = ({
       {/* Header & Filter Controls */}
       <div className="bg-white rounded-3xl p-6 shadow-xs border border-slate-200/90 flex items-center justify-between flex-wrap gap-4">
         <div>
+          {onGoBack && (
+            <button
+              type="button"
+              onClick={onGoBack}
+              className="inline-flex items-center gap-1.5 px-3 py-1 mb-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950 text-xs font-bold transition-all shadow-2xs group"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+              <span>返回最新 BS 結餘</span>
+            </button>
+          )}
+
           <div className="flex items-center gap-2 mb-1">
-            <span className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700">
+            <span className="p-1.5 rounded-lg bg-purple-100 text-purple-700">
               <LineChartIcon className="w-4 h-4" />
             </span>
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Health Economics & Weight Trends
+              Health Economics & Weight Trends (圖)
             </span>
           </div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">

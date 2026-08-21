@@ -31,9 +31,12 @@ import {
   FileDown,
   FileUp,
   RefreshCw,
-  Info
+  Info,
+  Globe,
+  Languages,
+  Loader2
 } from 'lucide-react';
-import { QuestionDBItem, QuestionPack } from '../types';
+import { QuestionDBItem, QuestionPack, AppLanguage } from '../types';
 import { 
   MARKETPLACE_QUESTION_PACKS, 
   loadCustomQuestions, 
@@ -48,6 +51,7 @@ import {
   parseQuestionsFromCSV, 
   CSVParseResult 
 } from '../utils/csvHelper';
+import { SUPPORTED_LANGUAGES } from '../utils/translations';
 
 interface QuestionBankModalProps {
   isOpen: boolean;
@@ -60,7 +64,7 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
   onClose,
   onDatabaseUpdated,
 }) => {
-  const [activeTab, setActiveTab] = useState<'explore' | 'create' | 'csv' | 'store'>('explore');
+  const [activeTab, setActiveTab] = useState<'explore' | 'create' | 'csv' | 'ai' | 'store'>('explore');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'nutrition' | 'exercise' | 'hydration' | 'weight'>('all');
   const [attributeFilter, setAttributeFilter] = useState<'all' | 'asset' | 'liability'>('all');
@@ -85,6 +89,16 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
   const [isDraggingCSV, setIsDraggingCSV] = useState(false);
   const [csvNotice, setCsvNotice] = useState<{ text: string; success: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // AI Translation State
+  const [aiTargetLang, setAiTargetLang] = useState<AppLanguage>('en');
+  const [aiSourceScope, setAiSourceScope] = useState<'custom' | 'all' | 'csv'>('custom');
+  const [isTranslatingWithAI, setIsTranslatingWithAI] = useState(false);
+  const [aiTranslatedQuestions, setAiTranslatedQuestions] = useState<QuestionDBItem[] | null>(null);
+  const [aiNotice, setAiNotice] = useState<{ text: string; success: boolean } | null>(null);
+
+  // Single Question Quick Translation Modal
+  const [translatingQuestionId, setTranslatingQuestionId] = useState<string | null>(null);
 
   // Store Checkout Modal State
   const [purchasingPack, setPurchasingPack] = useState<QuestionPack | null>(null);
@@ -248,6 +262,82 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
     downloadCSVTemplate('health_accounting_question_template.csv');
   };
 
+  // AI Translation Handler via backend /api/gemini/translate-questions
+  const handleTranslateWithAI = async (questionsToTranslate?: QuestionDBItem[]) => {
+    let sourceList: QuestionDBItem[] = [];
+    if (questionsToTranslate && questionsToTranslate.length > 0) {
+      sourceList = questionsToTranslate;
+    } else if (aiSourceScope === 'custom') {
+      sourceList = customQuestions;
+    } else if (aiSourceScope === 'csv' && parsedCSVPreview) {
+      sourceList = parsedCSVPreview.data;
+    } else {
+      sourceList = allMergedQuestions.slice(0, 50); // limit batch to top 50
+    }
+
+    if (sourceList.length === 0) {
+      setAiNotice({ text: '查無可翻譯的題目內容，請先新增題目、選擇 CSV 或切換題庫範圍。', success: false });
+      return;
+    }
+
+    setIsTranslatingWithAI(true);
+    setAiNotice(null);
+
+    const targetLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === aiTargetLang);
+    const targetLangName = targetLangObj ? `${targetLangObj.name} (${targetLangObj.nativeName})` : aiTargetLang;
+
+    try {
+      const response = await fetch('/api/gemini/translate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questions: sourceList,
+          targetLanguage: aiTargetLang,
+          targetLanguageName: targetLangName,
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success && Array.isArray(data.translatedQuestions)) {
+        setAiTranslatedQuestions(data.translatedQuestions);
+        setAiNotice({
+          text: `🎉 Gemini 3.7 Flash 成功將 ${data.translatedQuestions.length} 道健康題目翻譯為 ${targetLangName}！`,
+          success: true,
+        });
+      } else {
+        throw new Error(data.message || data.error || '翻譯請求失敗');
+      }
+    } catch (err: any) {
+      console.error('AI translation error:', err);
+      // Fallback translation message
+      setAiNotice({
+        text: `AI 翻譯連線提示：${err.message || '請確認網路狀態後重試'}`,
+        success: false,
+      });
+    } finally {
+      setIsTranslatingWithAI(false);
+    }
+  };
+
+  const handleApplyTranslatedQuestions = () => {
+    if (!aiTranslatedQuestions || aiTranslatedQuestions.length === 0) return;
+    const updatedList = [...customQuestions, ...aiTranslatedQuestions];
+    setCustomQuestions(updatedList);
+    saveCustomQuestions(updatedList);
+    setAiNotice({
+      text: `🎉 已將 ${aiTranslatedQuestions.length} 道翻譯後題目存入自訂題庫！`,
+      success: true,
+    });
+    setAiTranslatedQuestions(null);
+    onDatabaseUpdated?.();
+  };
+
+  const handleExportTranslatedCSV = () => {
+    if (!aiTranslatedQuestions || aiTranslatedQuestions.length === 0) return;
+    const filename = `health_questions_${aiTargetLang}_${new Date().toISOString().split('T')[0]}.csv`;
+    exportQuestionsToCSV(aiTranslatedQuestions, filename);
+  };
+
   const handleConfirmPurchase = () => {
     if (!purchasingPack) return;
     setIsProcessingPayment(true);
@@ -283,7 +373,7 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                可自由自訂問題、CSV 批次匯入/匯出、檢視題庫或單次 10 元加購 50 題擴充包
+                可自由自訂問題、CSV 批次匯入/匯出、AI 智慧多語言翻譯或單次 10 元加購 50 題擴充包
               </p>
             </div>
           </div>
@@ -327,11 +417,11 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl shrink-0 text-xs font-semibold overflow-x-auto">
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-2xl shrink-0 text-xs font-semibold overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('explore')}
-            className={`flex-1 py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            className={`flex-1 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
               activeTab === 'explore'
                 ? 'bg-white text-indigo-700 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
@@ -344,42 +434,58 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('create')}
-            className={`flex-1 py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            className={`flex-1 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
               activeTab === 'create'
                 ? 'bg-white text-indigo-700 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>單筆新增 ({customQuestions.length})</span>
+            <span>單筆新增</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('csv')}
-            className={`flex-1 py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            className={`flex-1 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
               activeTab === 'csv'
                 ? 'bg-white text-indigo-700 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>CSV 匯入 / 匯出</span>
+            <span>CSV 匯入/出</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('ai')}
+            className={`flex-1 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
+              activeTab === 'ai'
+                ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            <span>AI 翻譯</span>
+            <span className="bg-indigo-600 text-white text-[9px] px-1 py-0.1 rounded-full font-bold">
+              AI
+            </span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('store')}
-            className={`flex-1 py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
+            className={`flex-1 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
               activeTab === 'store'
                 ? 'bg-white text-indigo-700 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <ShoppingBag className="w-3.5 h-3.5 text-amber-500" />
-            <span>50題擴充包 (NT$ 10)</span>
-            <span className="bg-amber-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-bold">
-              加購
+            <span>+50題擴充</span>
+            <span className="bg-amber-500 text-white text-[9px] px-1 py-0.1 rounded-full font-bold">
+              $10
             </span>
           </button>
         </div>
@@ -962,9 +1068,24 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
 
               {/* Table Column Reference Card */}
               <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1.5">
-                <div className="font-bold text-slate-800 flex items-center gap-1">
-                  <Info className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>CSV 表頭欄位格式指南：</span>
+                <div className="font-bold text-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <Info className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>CSV 表頭欄位格式指南：</span>
+                  </div>
+                  {parsedCSVPreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiSourceScope('csv');
+                        setActiveTab('ai');
+                      }}
+                      className="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200"
+                    >
+                      <Sparkles className="w-3 h-3 text-indigo-600" />
+                      <span>以 AI 翻譯剛上傳的 CSV ({parsedCSVPreview.data.length} 題)</span>
+                    </button>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
                   <div className="bg-white p-1.5 rounded-lg border border-slate-200">
@@ -989,7 +1110,233 @@ export const QuestionBankModal: React.FC<QuestionBankModalProps> = ({
           </div>
         )}
 
-        {/* Tab 4: Store Expansion Packs (每次更新 50 題付費 10 元機制) */}
+        {/* Tab 4: AI Intelligent Translation Center */}
+        {activeTab === 'ai' && (
+          <div className="space-y-4 flex-1 overflow-y-auto pr-1 text-xs">
+            {/* Header info banner */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent border border-indigo-200/80 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-indigo-950 text-xs flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <span>Gemini 3.7 Flash 生理學多語言 AI 翻譯中心</span>
+                </span>
+                <span className="bg-indigo-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">
+                  AI 智能翻譯
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                運用 Google Gemini 3.7 Flash 專業醫學與運動生理學知識庫，自動將題庫精準翻譯為目標語言（保留 Andy Galpin 生理學名詞、資產負債結構與權重分數）。
+              </p>
+            </div>
+
+            {/* Translation Configuration Box */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              {/* Target Language Selection */}
+              <div>
+                <label className="font-bold text-slate-800 block mb-1.5 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>選擇翻譯目標語言 (Target Language)：</span>
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                  {SUPPORTED_LANGUAGES.map((lang) => {
+                    const isSelected = lang.code === aiTargetLang;
+                    return (
+                      <button
+                        key={lang.code}
+                        type="button"
+                        onClick={() => setAiTargetLang(lang.code)}
+                        className={`p-2 rounded-xl border text-center transition-all flex flex-col items-center gap-0.5 ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        <span className="text-base">{lang.flag}</span>
+                        <span className="text-[10px] font-semibold">{lang.nativeName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Source Questions Scope */}
+              <div>
+                <label className="font-bold text-slate-800 block mb-1 flex items-center gap-1.5">
+                  <Languages className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>選擇翻譯題庫來源範圍：</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <label className={`p-2.5 rounded-xl border cursor-pointer flex items-center gap-2 transition-all ${
+                    aiSourceScope === 'custom'
+                      ? 'bg-indigo-50/70 border-indigo-300 text-indigo-900 font-bold'
+                      : 'bg-white border-slate-200 text-slate-700'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="aiScope"
+                      checked={aiSourceScope === 'custom'}
+                      onChange={() => setAiSourceScope('custom')}
+                      className="accent-indigo-600"
+                    />
+                    <div className="text-[11px]">
+                      <div>自訂題庫</div>
+                      <div className="text-[10px] text-slate-500 font-normal">{customQuestions.length} 題</div>
+                    </div>
+                  </label>
+
+                  <label className={`p-2.5 rounded-xl border cursor-pointer flex items-center gap-2 transition-all ${
+                    aiSourceScope === 'all'
+                      ? 'bg-indigo-50/70 border-indigo-300 text-indigo-900 font-bold'
+                      : 'bg-white border-slate-200 text-slate-700'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="aiScope"
+                      checked={aiSourceScope === 'all'}
+                      onChange={() => setAiSourceScope('all')}
+                      className="accent-indigo-600"
+                    />
+                    <div className="text-[11px]">
+                      <div>完整題庫 (前50題)</div>
+                      <div className="text-[10px] text-slate-500 font-normal">現有 {allMergedQuestions.length} 題</div>
+                    </div>
+                  </label>
+
+                  <label className={`p-2.5 rounded-xl border cursor-pointer flex items-center gap-2 transition-all ${
+                    aiSourceScope === 'csv'
+                      ? 'bg-indigo-50/70 border-indigo-300 text-indigo-900 font-bold'
+                      : 'bg-white border-slate-200 text-slate-700'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="aiScope"
+                      checked={aiSourceScope === 'csv'}
+                      onChange={() => setAiSourceScope('csv')}
+                      className="accent-indigo-600"
+                    />
+                    <div className="text-[11px]">
+                      <div>剛上傳的 CSV 內容</div>
+                      <div className="text-[10px] text-slate-500 font-normal">
+                        {parsedCSVPreview ? `${parsedCSVPreview.data.length} 題` : '尚未解析 CSV'}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Start Translation Button */}
+              <button
+                type="button"
+                disabled={isTranslatingWithAI}
+                onClick={() => handleTranslateWithAI()}
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isTranslatingWithAI ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Gemini 3.7 Flash 正在智慧翻譯中，請稍候...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>運用 Gemini 3.7 Flash 執行 AI 題庫翻譯</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* AI Notice Alert */}
+            {aiNotice && (
+              <div className={`p-3 rounded-2xl text-xs flex items-center justify-between gap-2 ${
+                aiNotice.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {aiNotice.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{aiNotice.text}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAiNotice(null)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Translated Output List Preview & Actions */}
+            {aiTranslatedQuestions && aiTranslatedQuestions.length > 0 && (
+              <div className="p-3.5 rounded-2xl bg-white border border-indigo-200 shadow-sm space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-xs">
+                      AI 翻譯成果預覽（共 {aiTranslatedQuestions.length} 題）
+                    </span>
+                    <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      目標：{aiTargetLang}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExportTranslatedCSV}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] border border-emerald-200 flex items-center gap-1"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>匯出翻譯 CSV</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyTranslatedQuestions}
+                      className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] shadow-xs flex items-center gap-1"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>加入自訂題庫</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preview cards */}
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {aiTranslatedQuestions.map((tq, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5 hover:border-indigo-200 transition-all"
+                    >
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 font-bold">
+                          {tq.question_id}
+                        </span>
+                        <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-bold">
+                          {tq.category}
+                        </span>
+                        <span className={tq.attribute === 'asset' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                          {tq.attribute === 'asset' ? '＋資產' : '－負債'} ({tq.weight} 點)
+                        </span>
+                        <span className="text-slate-500 font-mono text-[10px]">
+                          {tq.galpin_principle}
+                        </span>
+                      </div>
+                      <p className="font-bold text-slate-900 text-xs">{tq.question_text}</p>
+                      {tq.tip && (
+                        <p className="text-[11px] text-slate-500 bg-white p-1.5 rounded-lg border border-slate-100">
+                          💡 {tq.tip}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 5: Store Expansion Packs (每次更新 50 題付費 10 元機制) */}
         {activeTab === 'store' && (
           <div className="space-y-3.5 flex-1 overflow-y-auto pr-1">
             {/* Header info banner */}

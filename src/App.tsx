@@ -10,7 +10,8 @@ import { QuestionBankModal } from './components/QuestionBankModal';
 import { 
   UserProfile, 
   DailyRecord, 
-  HealthQuestion 
+  HealthQuestion,
+  AppLanguage
 } from './types';
 import { 
   loadUserProfile, 
@@ -47,6 +48,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'questions' | 'balancesheet' | 'trend' | 'grocery' | 'profile'>('home');
   const [mobileViewMode, setMobileViewMode] = useState(false);
   const [reminderToast, setReminderToast] = useState<{ title: string; body: string; timestamp?: string } | null>(null);
+  const [currentLanguage, setCurrentLanguage] = useState<AppLanguage>('zh-TW');
 
   const todayStr = getTodayDateString();
   const [records, setRecords] = useState<DailyRecord[]>(() => loadHealthRecords(profile.weight));
@@ -193,6 +195,8 @@ export default function App() {
         todayCompleted={todayCompleted}
         mobileViewMode={mobileViewMode}
         setMobileViewMode={setMobileViewMode}
+        currentLanguage={currentLanguage}
+        onLanguageChange={setCurrentLanguage}
       />
 
       {/* Main Content Area: Responsive or Simulated Mobile Frame */}
@@ -215,6 +219,7 @@ export default function App() {
               onViewGrocery={() => setActiveTab('grocery')}
               onOpenProfile={() => setIsProfileModalOpen(true)}
               onOpenQuestionBank={() => setIsQuestionBankOpen(true)}
+              currentLanguage={currentLanguage}
             />
           )}
 
@@ -273,7 +278,7 @@ export default function App() {
             </div>
           )}
 
-          {/* View: Trend Analysis */}
+          {/* View: Trend Analysis ("圖" - 體重/資產/負債趨勢圖) */}
           {activeTab === 'trend' && (
             <TrendAnalysis
               records={records}
@@ -282,6 +287,7 @@ export default function App() {
                 // View selected day record
                 setActiveTab('balancesheet');
               }}
+              onGoBack={() => setActiveTab('home')}
             />
           )}
 
@@ -296,9 +302,7 @@ export default function App() {
       <footer className="mt-auto border-t border-slate-200/80 bg-white py-4 px-4 text-center text-xs text-slate-500">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-800">健康資產負債表</span>
-            <span className="text-slate-300">•</span>
-            <span>每日 10 題評估身體健康狀況</span>
+            <span className="font-bold text-slate-800">10QBS</span>
           </div>
 
           <div className="flex items-center gap-3 text-[11px] text-slate-400">

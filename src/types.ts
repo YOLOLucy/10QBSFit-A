@@ -1,6 +1,14 @@
 export type QuestionCategory = 'nutrition' | 'exercise' | 'hydration' | 'weight' | 'diet';
 export type DBAttribute = 'asset' | 'liability';
 export type DBQuestionType = 'boolean' | 'numeric';
+export type AppLanguage = 'zh-TW' | 'zh-CN' | 'en' | 'ja' | 'ko' | 'es';
+
+export interface LanguageOption {
+  code: AppLanguage;
+  name: string;
+  nativeName: string;
+  flag: string;
+}
 
 export interface QuestionDBItem {
   question_id: string;
