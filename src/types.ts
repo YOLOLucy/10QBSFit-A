@@ -108,6 +108,7 @@ export interface GroceryItem {
   quantity: string;
   checked: boolean;
   notes?: string;
+  mealUsage?: string[]; // e.g. ['週一午餐', '週二晚餐', '週五午餐']
 }
 
 export interface MealItem {
@@ -116,6 +117,7 @@ export interface MealItem {
   caloriesApprox: number;
   proteinApprox: number;
   tags: string[];
+  ingredients?: string[]; // List of required ingredients
 }
 
 export interface DayMealPlan {

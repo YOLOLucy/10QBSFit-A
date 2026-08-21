@@ -7,27 +7,25 @@ import {
   Trash2, 
   Copy, 
   Sparkles, 
-  Calendar, 
   Flame, 
-  Clock, 
   ChefHat, 
   RefreshCw,
+  Info,
   CheckCircle2,
-  Share2,
-  Info
+  CalendarCheck
 } from 'lucide-react';
 import { INITIAL_GROCERY_LIST, WEEKLY_MEAL_PLAN } from '../data/mealAndGroceryData';
 import { GroceryItem, DayMealPlan } from '../types';
 import { getTodayDateString, isWeekend } from '../utils/calculations';
 
-const STORAGE_KEY_GROCERY = 'health_balance_grocery_items_custom_v1';
+const STORAGE_KEY_GROCERY = 'health_balance_grocery_items_custom_v2';
 
 export const WeekendGroceryMealPlan: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'grocery' | 'mealplan'>('grocery');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedDayIdx, setSelectedDayIdx] = useState<number>(0);
 
-  // Load grocery list with local storage
+  // Load grocery list with local storage, default to synchronized INITIAL_GROCERY_LIST
   const [groceryList, setGroceryList] = useState<GroceryItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_GROCERY);
@@ -77,6 +75,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
       category: newItemCategory,
       notes: newItemNotes.trim() || '自訂採買項目',
       checked: false,
+      mealUsage: ['自訂加購'],
     };
 
     saveList([newItem, ...groceryList]);
@@ -98,8 +97,8 @@ export const WeekendGroceryMealPlan: React.FC = () => {
     }
   };
 
-  const handleRestoreDefaults = () => {
-    if (window.confirm('確定要恢復為官方推薦的標準一週採買清單嗎？')) {
+  const handleSyncWithWeeklyMealPlan = () => {
+    if (window.confirm('確定要將採買清單完全同步為「一週7天建議菜單」所需的標準食材清單嗎？（將保留官方所有食材配方）')) {
       saveList(INITIAL_GROCERY_LIST);
     }
   };
@@ -122,16 +121,17 @@ export const WeekendGroceryMealPlan: React.FC = () => {
     };
 
     groceryList.forEach((item) => {
-      groupedByCategory[item.category]?.push(`- ${item.checked ? ' [已買] ' : ' [ ] '} ${item.name} (${item.quantity})`);
+      const usageStr = item.mealUsage && item.mealUsage.length > 0 ? ` [${item.mealUsage.slice(0, 3).join('/')}]` : '';
+      groupedByCategory[item.category]?.push(`- ${item.checked ? ' [已買] ' : ' [ ] '} ${item.name} (${item.quantity})${usageStr}`);
     });
 
-    let text = `🛒【一週超市健康採買清單】（規劃7天自煮好食材）\n`;
+    let text = `🛒【一週超市健康採買清單】（與7天建議菜單100%同步）\n`;
     Object.entries(groupedByCategory).forEach(([catKey, items]) => {
       if (items.length > 0) {
         text += `\n${categoryNames[catKey] || '【其他】'}\n${items.join('\n')}`;
       }
     });
-    text += `\n\n— 透過健康資產負債表管理一週食材！`;
+    text += `\n\n— 透過 10QBS 健康資產負債表管理一週原型食材！`;
 
     navigator.clipboard.writeText(text);
     alert('已複製一週採買清單到剪貼簿！可直接貼至備忘錄或 Line 採買時使用。');
@@ -167,20 +167,26 @@ export const WeekendGroceryMealPlan: React.FC = () => {
               週末超市採買清單 & 一週建議菜單
             </h2>
             <p className="text-xs text-emerald-100/90 mt-1 max-w-xl leading-relaxed">
-              在星期六日事先備妥一週份量的原型食材，平日自煮省時省錢，徹底遠離高油高糖外食負債！
+              採買清單與一週7天建議菜單食材<strong>100% 嚴密同步</strong>。事先備妥一週份量原型食材，自煮省時省錢，徹底遠離高油高糖外食負債！
             </p>
           </div>
 
-          {weekendNow ? (
-            <span className="px-3.5 py-1.5 rounded-xl bg-amber-400 text-slate-950 text-xs font-black shadow-sm flex items-center gap-1.5 animate-pulse">
-              <Sparkles className="w-4 h-4 text-slate-900" />
-              <span>今日逢週末！正是採買備餐黃金時機</span>
+          <div className="flex flex-col items-end gap-2">
+            {weekendNow ? (
+              <span className="px-3.5 py-1.5 rounded-xl bg-amber-400 text-slate-950 text-xs font-black shadow-sm flex items-center gap-1.5 animate-pulse">
+                <Sparkles className="w-4 h-4 text-slate-900" />
+                <span>今日逢週末！採買備餐黃金時機</span>
+              </span>
+            ) : (
+              <span className="px-3 py-1 rounded-xl bg-white/10 text-emerald-100 text-xs font-medium border border-white/15">
+                隨時預先規劃下週食材
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-200 bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              食材清單與7天菜單已同步
             </span>
-          ) : (
-            <span className="px-3 py-1 rounded-xl bg-white/10 text-emerald-100 text-xs font-medium border border-white/15">
-              隨時預先規劃下週食材
-            </span>
-          )}
+          </div>
         </div>
 
         {/* Sub-Tab Navigation Switcher */}
@@ -221,7 +227,10 @@ export const WeekendGroceryMealPlan: React.FC = () => {
           <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-xs border border-slate-200 flex items-center justify-between flex-wrap gap-3">
             <div className="flex-1 min-w-[200px]">
               <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1.5">
-                <span>採買進度完成度</span>
+                <span className="flex items-center gap-1.5">
+                  <span>採買進度完成度</span>
+                  <span className="text-[11px] text-slate-400 font-normal">（同步菜單共 {totalCount} 項食材）</span>
+                </span>
                 <span className="text-emerald-600">{progressPercent}% ({checkedCount}/{totalCount} 項)</span>
               </div>
               <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
@@ -232,13 +241,22 @@ export const WeekendGroceryMealPlan: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => setIsAddingItem(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all"
               >
                 <Plus className="w-4 h-4" />
-                <span>新增食材</span>
+                <span>新增自訂食材</span>
+              </button>
+
+              <button
+                onClick={handleSyncWithWeeklyMealPlan}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-xs font-bold transition-all"
+                title="與一週菜單重新同步官方食材清單"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-teal-600" />
+                <span>同步一週菜單</span>
               </button>
 
               <button
@@ -269,7 +287,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Plus className="w-4 h-4 text-emerald-600" />
-                  <span>自訂新增一週採買食材</span>
+                  <span>自訂新增採買食材</span>
                 </h3>
                 <button 
                   type="button" 
@@ -395,18 +413,35 @@ export const WeekendGroceryMealPlan: React.FC = () => {
                     {item.checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                   </div>
 
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`text-xs font-bold leading-tight ${item.checked ? 'line-through text-slate-400' : 'text-slate-900'}`}>
                         {item.name}
                       </span>
                     </div>
+
                     <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
                       份量：{item.quantity}
                     </div>
+
+                    {/* Meal Plan Usage Badges */}
+                    {item.mealUsage && item.mealUsage.length > 0 && (
+                      <div className="flex items-center gap-1 flex-wrap mt-1.5">
+                        <span className="text-[9px] text-slate-400 font-medium">用於：</span>
+                        {item.mealUsage.map((usage) => (
+                          <span 
+                            key={usage} 
+                            className="text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded-md"
+                          >
+                            {usage}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     {item.notes && (
-                      <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">
-                        {item.notes}
+                      <p className="text-[10px] text-slate-400 mt-1 line-clamp-1">
+                        💡 {item.notes}
                       </p>
                     )}
                   </div>
@@ -420,7 +455,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
                       handleDeleteItem(item.id);
                     }}
                     className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition-opacity"
-                    title="刪除項目"
+                    title="刪除自訂項目"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -497,7 +532,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
             {/* 4 Meals Grid: Breakfast, Lunch, Dinner, Snack */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Breakfast */}
-              <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-100/80 space-y-2">
+              <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-100/80 space-y-2.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-extrabold text-amber-900 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
@@ -509,9 +544,27 @@ export const WeekendGroceryMealPlan: React.FC = () => {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900">{currentMealPlan.breakfast.name}</h4>
                 <p className="text-xs text-slate-600 leading-relaxed">{currentMealPlan.breakfast.description}</p>
+                
+                {/* Synchronized Ingredients */}
+                {currentMealPlan.breakfast.ingredients && (
+                  <div className="pt-1">
+                    <div className="text-[10px] font-bold text-amber-900 mb-1 flex items-center gap-1">
+                      <CalendarCheck className="w-3 h-3 text-amber-600" />
+                      <span>採買清單對應食材：</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {currentMealPlan.breakfast.ingredients.map((ing) => (
+                        <span key={ing} className="text-[10px] font-medium bg-white text-amber-900 px-1.5 py-0.5 rounded border border-amber-200 shadow-2xs">
+                          {ing}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-1 flex-wrap pt-1">
                   {currentMealPlan.breakfast.tags.map((t) => (
-                    <span key={t} className="text-[10px] font-semibold bg-white/80 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200">
+                    <span key={t} className="text-[10px] font-semibold bg-amber-100/60 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200/60">
                       #{t}
                     </span>
                   ))}
@@ -519,7 +572,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
               </div>
 
               {/* Lunch */}
-              <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100/80 space-y-2">
+              <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100/80 space-y-2.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-extrabold text-emerald-900 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
@@ -531,9 +584,27 @@ export const WeekendGroceryMealPlan: React.FC = () => {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900">{currentMealPlan.lunch.name}</h4>
                 <p className="text-xs text-slate-600 leading-relaxed">{currentMealPlan.lunch.description}</p>
+                
+                {/* Synchronized Ingredients */}
+                {currentMealPlan.lunch.ingredients && (
+                  <div className="pt-1">
+                    <div className="text-[10px] font-bold text-emerald-900 mb-1 flex items-center gap-1">
+                      <CalendarCheck className="w-3 h-3 text-emerald-600" />
+                      <span>採買清單對應食材：</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {currentMealPlan.lunch.ingredients.map((ing) => (
+                        <span key={ing} className="text-[10px] font-medium bg-white text-emerald-900 px-1.5 py-0.5 rounded border border-emerald-200 shadow-2xs">
+                          {ing}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-1 flex-wrap pt-1">
                   {currentMealPlan.lunch.tags.map((t) => (
-                    <span key={t} className="text-[10px] font-semibold bg-white/80 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200">
+                    <span key={t} className="text-[10px] font-semibold bg-emerald-100/60 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200/60">
                       #{t}
                     </span>
                   ))}
@@ -541,7 +612,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
               </div>
 
               {/* Dinner */}
-              <div className="p-4 rounded-2xl bg-teal-50/50 border border-teal-100/80 space-y-2">
+              <div className="p-4 rounded-2xl bg-teal-50/50 border border-teal-100/80 space-y-2.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-extrabold text-teal-900 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-teal-500 inline-block" />
@@ -553,9 +624,27 @@ export const WeekendGroceryMealPlan: React.FC = () => {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900">{currentMealPlan.dinner.name}</h4>
                 <p className="text-xs text-slate-600 leading-relaxed">{currentMealPlan.dinner.description}</p>
+                
+                {/* Synchronized Ingredients */}
+                {currentMealPlan.dinner.ingredients && (
+                  <div className="pt-1">
+                    <div className="text-[10px] font-bold text-teal-900 mb-1 flex items-center gap-1">
+                      <CalendarCheck className="w-3 h-3 text-teal-600" />
+                      <span>採買清單對應食材：</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {currentMealPlan.dinner.ingredients.map((ing) => (
+                        <span key={ing} className="text-[10px] font-medium bg-white text-teal-900 px-1.5 py-0.5 rounded border border-teal-200 shadow-2xs">
+                          {ing}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-1 flex-wrap pt-1">
                   {currentMealPlan.dinner.tags.map((t) => (
-                    <span key={t} className="text-[10px] font-semibold bg-white/80 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200">
+                    <span key={t} className="text-[10px] font-semibold bg-teal-100/60 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
                       #{t}
                     </span>
                   ))}
@@ -563,7 +652,7 @@ export const WeekendGroceryMealPlan: React.FC = () => {
               </div>
 
               {/* Healthy Snack */}
-              <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100/80 space-y-2">
+              <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100/80 space-y-2.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-extrabold text-purple-900 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-purple-500 inline-block" />
@@ -575,9 +664,27 @@ export const WeekendGroceryMealPlan: React.FC = () => {
                 </div>
                 <h4 className="text-sm font-bold text-slate-900">{currentMealPlan.snack.name}</h4>
                 <p className="text-xs text-slate-600 leading-relaxed">{currentMealPlan.snack.description}</p>
+                
+                {/* Synchronized Ingredients */}
+                {currentMealPlan.snack.ingredients && (
+                  <div className="pt-1">
+                    <div className="text-[10px] font-bold text-purple-900 mb-1 flex items-center gap-1">
+                      <CalendarCheck className="w-3 h-3 text-purple-600" />
+                      <span>採買清單對應食材：</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {currentMealPlan.snack.ingredients.map((ing) => (
+                        <span key={ing} className="text-[10px] font-medium bg-white text-purple-900 px-1.5 py-0.5 rounded border border-purple-200 shadow-2xs">
+                          {ing}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-1 flex-wrap pt-1">
                   {currentMealPlan.snack.tags.map((t) => (
-                    <span key={t} className="text-[10px] font-semibold bg-white/80 text-purple-800 px-2 py-0.5 rounded-md border border-purple-200">
+                    <span key={t} className="text-[10px] font-semibold bg-purple-100/60 text-purple-800 px-2 py-0.5 rounded-md border border-purple-200/60">
                       #{t}
                     </span>
                   ))}

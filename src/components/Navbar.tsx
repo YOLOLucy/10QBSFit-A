@@ -181,25 +181,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
         </button>
 
-        {/* Right: Dedicated '圖' (Trends) & '帳號' (Account) & Quick Actions */}
+        {/* Right: Question Bank & Account & Quick Actions */}
         <div className="flex items-center gap-2">
-          {/* Dedicated '圖' Button - Opens Weight / Assets / Liabilities Trend Analysis */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('trend')}
-            id="nav-trend-chart-btn"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all text-xs font-bold shadow-2xs group ${
-              activeTab === 'trend'
-                ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 hover:border-purple-300'
-            }`}
-            title="點擊查看 體重 / 資產 / 負債 綜合趨勢圖"
-          >
-            <LineChart className={`w-4 h-4 transition-transform group-hover:scale-110 ${activeTab === 'trend' ? 'text-white' : 'text-purple-600'}`} />
-            <span className="font-black text-xs tracking-wide">圖</span>
-            <span className="hidden md:inline text-[10px] opacity-80">(趨勢分析)</span>
-          </button>
-
           {/* Question Bank Manager & Expansion Market Button */}
           <button
             type="button"
