@@ -34,8 +34,8 @@ async function generateWithModelFallback(
     temperature?: number;
   }
 ) {
-  // Use valid supported models: gemini-2.5-flash, gemini-3.7-flash, gemini-3.1-flash-lite, gemini-2.0-flash
-  const models = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-2.0-flash"];
+  // Use valid supported models: gemini-3.7-flash (default), gemini-3.1-flash-lite, gemini-2.5-flash
+  const models = ["gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"];
   let lastError: any = null;
 
   for (const model of models) {
@@ -102,9 +102,14 @@ async function generateWithModelFallback(
         }
 
         // If it's a temporary 503 high demand or transient rate limit, wait slightly and retry
-        if (errMsg.includes("503") || errMsg.includes("demand") || errMsg.includes("429") || status === 503 || status === 429) {
-          await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
-          continue;
+        if (errMsg.includes("503") || errMsg.includes("demand") || errMsg.includes("UNAVAILABLE") || errMsg.includes("429") || status === 503 || status === 429) {
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            continue;
+          } else {
+            // Already failed twice on this model due to high demand, switch to next model immediately
+            break;
+          }
         } else {
           // For other errors, switch to next model immediately
           break;
