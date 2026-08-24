@@ -22,7 +22,9 @@ function extractJsonFromText(rawText: string): any {
   }
 }
 
-// Resilient helper to call Gemini with multi-model fallback, retry on 503/429, and Google Search Grounding support
+// Resilient helper to call Gemini with multi-model fallback, smart rate-limit cooldown, and Google Search Grounding support
+const modelCooldownMap = new Map<string, number>();
+
 async function generateWithModelFallback(
   ai: GoogleGenAI,
   callConfig: {
@@ -34,87 +36,83 @@ async function generateWithModelFallback(
     temperature?: number;
   }
 ) {
-  // Use valid supported models: gemini-3.7-flash (default), gemini-3.1-flash-lite, gemini-2.5-flash
-  const models = ["gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"];
+  // Optimal order prioritizing models with available capacity
+  const candidateModels = ["gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"];
+  const now = Date.now();
+  
+  // Filter out models currently in rate-limit cooldown (e.g. 5 minutes)
+  const models = candidateModels.filter((m) => {
+    const cooldownUntil = modelCooldownMap.get(m);
+    return !cooldownUntil || now > cooldownUntil;
+  });
+
+  // If all candidate models are in cooldown, reset cooldown and try 3.7-flash first
+  const modelsToTry = models.length > 0 ? models : candidateModels;
   let lastError: any = null;
 
-  for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        console.log(`[Gemini API] Attempting with model: ${model} (attempt ${attempt + 1})`);
-        const config: any = {};
-        if (callConfig.systemInstruction) config.systemInstruction = callConfig.systemInstruction;
-        
-        // Note: In Gemini API, tools (e.g. googleSearch) CANNOT be combined with responseMimeType: 'application/json' or responseSchema.
-        if (callConfig.tools && callConfig.tools.length > 0) {
-          config.tools = callConfig.tools;
-        } else {
-          if (callConfig.responseMimeType) config.responseMimeType = callConfig.responseMimeType;
-          if (callConfig.responseSchema) config.responseSchema = callConfig.responseSchema;
-        }
-        
-        config.temperature = typeof callConfig.temperature === 'number' ? callConfig.temperature : 0.92;
+  for (const model of modelsToTry) {
+    try {
+      console.log(`[Gemini API] Requesting with model: ${model}`);
+      const config: any = {};
+      if (callConfig.systemInstruction) config.systemInstruction = callConfig.systemInstruction;
+      
+      // Note: In Gemini API, tools (e.g. googleSearch) CANNOT be combined with responseMimeType: 'application/json' or responseSchema.
+      if (callConfig.tools && callConfig.tools.length > 0) {
+        config.tools = callConfig.tools;
+      } else {
+        if (callConfig.responseMimeType) config.responseMimeType = callConfig.responseMimeType;
+        if (callConfig.responseSchema) config.responseSchema = callConfig.responseSchema;
+      }
+      
+      config.temperature = typeof callConfig.temperature === 'number' ? callConfig.temperature : 0.92;
 
-        const response = await ai.models.generateContent({
-          model,
-          contents: callConfig.prompt,
-          config,
-        });
+      const response = await ai.models.generateContent({
+        model,
+        contents: callConfig.prompt,
+        config,
+      });
 
-        if (response && response.text) {
-          // Extract Grounding metadata if Google Search was utilized
-          const candidate = response.candidates?.[0];
-          const groundingMetadata = candidate?.groundingMetadata;
-          const groundingSources: Array<{ title: string; url: string; snippet?: string }> = [];
+      if (response && response.text) {
+        // Extract Grounding metadata if Google Search was utilized
+        const candidate = response.candidates?.[0];
+        const groundingMetadata = candidate?.groundingMetadata;
+        const groundingSources: Array<{ title: string; url: string; snippet?: string }> = [];
 
-          if (groundingMetadata && Array.isArray(groundingMetadata.groundingChunks)) {
-            for (const chunk of groundingMetadata.groundingChunks) {
-              if (chunk.web && chunk.web.uri) {
-                groundingSources.push({
-                  title: chunk.web.title || "Google AI 網路檢索來源",
-                  url: chunk.web.uri,
-                });
-              }
+        if (groundingMetadata && Array.isArray(groundingMetadata.groundingChunks)) {
+          for (const chunk of groundingMetadata.groundingChunks) {
+            if (chunk.web && chunk.web.uri) {
+              groundingSources.push({
+                title: chunk.web.title || "Google AI 網路檢索來源",
+                url: chunk.web.uri,
+              });
             }
           }
-
-          const searchQueriesUsed: string[] = Array.isArray(groundingMetadata?.webSearchQueries)
-            ? groundingMetadata.webSearchQueries
-            : [];
-
-          return { 
-            text: response.text, 
-            modelUsed: model, 
-            groundingMetadata,
-            groundingSources,
-            searchQueriesUsed,
-          };
-        }
-      } catch (err: any) {
-        lastError = err;
-        const errMsg = err?.message || String(err);
-        const status = err?.status || err?.code;
-        console.warn(`[Gemini API Warning] Model ${model} attempt ${attempt + 1} failed:`, errMsg);
-
-        // If quota is exhausted (429 / RESOURCE_EXHAUSTED), switch to the next model immediately
-        if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Quota exceeded") || errMsg.includes("quota")) {
-          break;
         }
 
-        // If it's a temporary 503 high demand or transient rate limit, wait slightly and retry
-        if (errMsg.includes("503") || errMsg.includes("demand") || errMsg.includes("UNAVAILABLE") || errMsg.includes("429") || status === 503 || status === 429) {
-          if (attempt === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            continue;
-          } else {
-            // Already failed twice on this model due to high demand, switch to next model immediately
-            break;
-          }
-        } else {
-          // For other errors, switch to next model immediately
-          break;
-        }
+        const searchQueriesUsed: string[] = Array.isArray(groundingMetadata?.webSearchQueries)
+          ? groundingMetadata.webSearchQueries
+          : [];
+
+        return { 
+          text: response.text, 
+          modelUsed: model, 
+          groundingMetadata,
+          groundingSources,
+          searchQueriesUsed,
+        };
       }
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err?.message || String(err);
+      
+      // If 429 quota is reached on this model, mark it on cooldown for 5 minutes
+      if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("429") || errMsg.includes("Quota exceeded")) {
+        modelCooldownMap.set(model, Date.now() + 5 * 60 * 1000);
+        console.log(`[Gemini API] Model ${model} reached quota limit, switching to alternate model`);
+      } else {
+        console.log(`[Gemini API] Model ${model} busy, switching to alternate model`);
+      }
+      continue;
     }
   }
 
@@ -897,6 +895,7 @@ ${JSON.stringify(questions, null, 2)}`;
       specialNotes = "",
       language = "zh-TW",
       userBiometrics,
+      combinedGoogleQuery,
     } = req.body;
 
     const validServings = Math.min(Math.max(Number(servings) || 1, 1), 4);
@@ -999,7 +998,9 @@ Return valid JSON in the requested language (${language}) matching the schema pr
 
       const prompt = `依安迪·加爾平 (Dr. Andy Galpin) 的運動生理理論設計一週菜單，並將所需食材 100% 完整整合進一週菜單及採買清單。
 
-核心搜尋與設計指令：【依安迪·加爾平的理論設計一週菜單】
+Google 問問 AI 核心檢索公式：
+${combinedGoogleQuery ? `【${combinedGoogleQuery}】` : `【依安迪·加爾平的理論設計一週菜單 + 身高${height}cm 體重${weight}kg TDEE ${tdee}kcal + 用餐人數${validServings}人 + ${fitnessGoal} + ${dietPreference}】`}
+
 - 人數規格：${validServings} 人份 (${validServings} servings)
 - 本次隨機輪替菜色風格重點（隨機種子 #${randomSeed}）：【${randomTheme}】
 - 個人生理數值與目標熱量：
@@ -1009,7 +1010,7 @@ Return valid JSON in the requested language (${language}) matching the schema pr
   * 三大營養素分配: 蛋白質 ~${targetProt}g (${(targetProt / weight).toFixed(1)}g/kg, 每餐達亮氨酸閾值 30-45g), 低GI複合碳水 ~${targetCarb}g, 優質好脂肪 ~${targetFat}g
 - 目標設定: ${fitnessGoal}
 - 飲食偏好: ${dietPreference}
-- 特殊備註需求: ${specialNotes || '無特殊限制'}
+- 特殊備註與靈感需求: ${specialNotes || '無特殊限制'}
 
 【菜單多樣性防重複要求】：
 請跳脫千篇一律的傳統雞胸配地瓜，根據上述【${randomTheme}】風格設計 7 天充滿變化、美味且符合 Dr. Galpin 原型全食物標準的全新早午晚 4 餐菜色（更換不同的優質蛋白質來源如鮭魚/鯖魚/鱸魚/大蝦/牛腱/毛豆/豆腐，不同的原型主食如燕麥/紫米/藜麥/南瓜/山藥/鷹嘴豆），確保每次生成都給予使用者完全不同的新鮮菜色！

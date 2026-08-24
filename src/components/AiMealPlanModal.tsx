@@ -17,7 +17,9 @@ import {
   ExternalLink,
   Shuffle,
   Info,
-  Clock
+  Clock,
+  Copy,
+  ArrowRight
 } from 'lucide-react';
 import { 
   DayMealPlan, 
@@ -123,6 +125,9 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   );
 
   const [isBiometricsExpanded, setIsBiometricsExpanded] = useState<boolean>(true);
+  const [copiedQuery, setCopiedQuery] = useState<boolean>(false);
+  const [pastedGoogleResult, setPastedGoogleResult] = useState<string>('');
+  const [isPasteExpanded, setIsPasteExpanded] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingStep, setLoadingStep] = useState<number>(0);
@@ -207,6 +212,47 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
     );
   }, [height, weight, bodyFat, age, gender, activityLevel, fitnessGoal]);
 
+  const activityLevelMap: Record<string, string> = {
+    sedentary: '久坐少動',
+    light: '輕度活動(每週1-3天)',
+    moderate: '中度活動(每週3-5天)',
+    very_active: '高度活動(每週6-7天)',
+    extra_active: '極高強度運動/勞動',
+  };
+
+  const selectedGoalObj = useMemo(() => {
+    return FITNESS_GOALS.find((g) => g.id === fitnessGoal) || FITNESS_GOALS[0];
+  }, [fitnessGoal]);
+
+  const selectedDietObj = useMemo(() => {
+    return DIET_PREFERENCES.find((d) => d.id === dietPreference) || DIET_PREFERENCES[0];
+  }, [dietPreference]);
+
+  // Dynamic Google Search & Ask AI Full Formula String
+  const combinedGoogleQuery = useMemo(() => {
+    const parts = [
+      '依安迪·加爾平的理論設計一週菜單',
+      `身高${height}cm 體重${weight}kg${bodyFat !== undefined ? ` 體脂率${bodyFat}%` : ''} 活動等級[${activityLevelMap[activityLevel] || activityLevel}]`,
+      `BMR ${macroPlan.bmr}kcal TDEE ${macroPlan.tdee}kcal 目標熱量 ${macroPlan.targetCalories}kcal 每日蛋白質 ${macroPlan.targetProteinG}g(${(macroPlan.targetProteinG / (weight || 1)).toFixed(1)}g/kg) 每餐亮氨酸MPS閾值 ${macroPlan.perMealProteinG}g 碳水 ${macroPlan.targetCarbsG}g 好脂肪 ${macroPlan.targetFatsG}g`,
+      `用餐人數：${servings}人份`,
+      `核心健康目標：${selectedGoalObj.title}`,
+      `飲食生活習慣偏好：${selectedDietObj.label}`,
+      specialNotes.trim() ? `特殊習慣備註：${specialNotes.trim()}` : '',
+      '輸出要求：週一至週日7天早午晚點心原型食物菜單 + 100%對應超市分類採買清單'
+    ].filter(Boolean);
+
+    return parts.join(' + ');
+  }, [height, weight, bodyFat, age, gender, activityLevel, macroPlan, servings, selectedGoalObj, selectedDietObj, specialNotes]);
+
+  const googleSearchUrl = `https://www.google.com/search?hl=zh-TW&q=${encodeURIComponent(combinedGoogleQuery)}`;
+  const googleWebhpUrl = `https://www.google.com/webhp?hl=zh-TW#q=${encodeURIComponent(combinedGoogleQuery)}`;
+
+  const handleCopyQuery = () => {
+    navigator.clipboard.writeText(combinedGoogleQuery);
+    setCopiedQuery(true);
+    setTimeout(() => setCopiedQuery(false), 2200);
+  };
+
   if (!isOpen) return null;
 
   const handleGenerate = async () => {
@@ -237,7 +283,11 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
 
       // Generate a dynamic variety seed on every click
       const varietySeed = Math.floor(Math.random() * 100000);
-      const seedNote = `[多樣性換新種子 #${varietySeed}] ${specialNotes || ''}`;
+      const combinedNotes = [
+        pastedGoogleResult.trim() ? `[Google 搜尋建議菜單參考: ${pastedGoogleResult.trim()}]` : '',
+        specialNotes.trim() ? specialNotes.trim() : '',
+        `[多樣性換新種子 #${varietySeed}]`
+      ].filter(Boolean).join(' | ');
 
       try {
         const res = await fetch('/api/gemini/generate-meal-and-grocery', {
@@ -247,10 +297,11 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
             servings,
             fitnessGoal,
             dietPreference,
-            specialNotes: seedNote,
+            specialNotes: combinedNotes,
             language: 'zh-TW',
             useGoogleSearch: true,
             userBiometrics: biometricsPayload,
+            combinedGoogleQuery,
           }),
         });
 
@@ -363,47 +414,136 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
           {!isLoading && !generatedResult && (
             <div className="space-y-6">
               
-              {/* Google Ask AI Mode Query Banner */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border-2 border-emerald-300/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-emerald-700 text-white shadow-sm shrink-0">
-                    <Globe className="w-4 h-4 animate-pulse text-emerald-200" />
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 rounded-md">
-                        Google 搜尋・問問 AI
-                      </span>
-                      <a
-                        href={`https://www.google.com/search?q=${encodeURIComponent('依安迪加爾平的理論設計一週菜單')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-black text-slate-900 hover:text-emerald-700 hover:underline inline-flex items-center gap-1 group"
-                        title="在 Google 搜尋中開啟此檢索指令"
-                      >
-                        <span>檢索指令：【依安迪·加爾平的理論設計一週菜單】</span>
-                        <ExternalLink className="w-3 h-3 text-emerald-600 opacity-70 group-hover:opacity-100" />
-                      </a>
+              {/* Google Ask AI Mode Query Formula Card */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-emerald-950 via-slate-900 to-teal-950 text-white border-2 border-emerald-500/40 shadow-lg space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-2xl bg-emerald-600 text-white shadow-md shrink-0">
+                      <Globe className="w-5 h-5 animate-pulse text-emerald-200" />
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-tight">
-                      連網檢索加爾平食譜，同步菜單與採買清單。
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-black uppercase bg-emerald-500 text-slate-950 px-2 py-0.5 rounded-md tracking-wider">
+                          Google 問問 AI 核心指令公式
+                        </span>
+                        <span className="text-xs font-bold text-emerald-300">
+                          即時連網檢索・自動同步轉化
+                        </span>
+                      </div>
+                      <h3 className="text-sm sm:text-base font-black text-white mt-0.5">
+                        核心指令：「依安迪·加爾平的理論設計一週菜單」
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <button
+                      type="button"
+                      onClick={() => setRandomizeWebInspiration(!randomizeWebInspiration)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all border ${
+                        randomizeWebInspiration
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-xs'
+                          : 'bg-white/10 text-white border-white/20 hover:bg-white/20'
+                      }`}
+                      title="每次生成隨機換新網路食譜靈感"
+                    >
+                      <Shuffle className="w-3.5 h-3.5" />
+                      <span>{randomizeWebInspiration ? '隨機靈感 ON' : '隨機靈感 OFF'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 5-Part Formula Badges Breakdown */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1 text-[11px]">
+                  <div className="p-2.5 rounded-xl bg-white/10 border border-white/10 backdrop-blur-xs space-y-1">
+                    <span className="text-[10px] font-black text-emerald-300 block uppercase">
+                      ① 核心指令
+                    </span>
+                    <p className="font-bold text-white leading-tight">
+                      依安迪·加爾平的理論設計一週菜單
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white/10 border border-white/10 backdrop-blur-xs space-y-1">
+                    <span className="text-[10px] font-black text-emerald-300 block uppercase">
+                      ② 前頁生理與 TDEE
+                    </span>
+                    <p className="font-bold text-white leading-tight">
+                      {height}cm / {weight}kg {bodyFat !== undefined ? `/ ${bodyFat}%` : ''} · TDEE {macroPlan.tdee}kcal
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white/10 border border-white/10 backdrop-blur-xs space-y-1">
+                    <span className="text-[10px] font-black text-emerald-300 block uppercase">
+                      ③ 用餐人數方案
+                    </span>
+                    <p className="font-bold text-white leading-tight">
+                      {servings} 人份 (採買量自動等比縮放)
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white/10 border border-white/10 backdrop-blur-xs space-y-1">
+                    <span className="text-[10px] font-black text-emerald-300 block uppercase">
+                      ④ 核心健康目標
+                    </span>
+                    <p className="font-bold text-white leading-tight truncate" title={selectedGoalObj.title}>
+                      {selectedGoalObj.title} ({macroPlan.targetCalories}kcal / 蛋白質 {macroPlan.targetProteinG}g)
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white/10 border border-white/10 backdrop-blur-xs space-y-1 sm:col-span-2 lg:col-span-2">
+                    <span className="text-[10px] font-black text-emerald-300 block uppercase">
+                      ⑤ 飲食生活習慣偏好
+                    </span>
+                    <p className="font-bold text-white leading-tight truncate" title={selectedDietObj.label}>
+                      {selectedDietObj.label} {specialNotes ? `(${specialNotes})` : ''}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                {/* Formula Action Links Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/15">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href={googleSearchUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black inline-flex items-center gap-1.5 shadow-sm transition-all hover:scale-102"
+                      title="開啟 Google 搜尋「問問 AI」"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>在 Google 搜尋中開啟檢索</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+
+                    <a
+                      href={googleWebhpUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                      title="開啟 Google Webhp 搜尋首頁"
+                    >
+                      <span>Google Webhp 檢索</span>
+                      <ExternalLink className="w-3 h-3 text-emerald-300" />
+                    </a>
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => setRandomizeWebInspiration(!randomizeWebInspiration)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all border ${
-                      randomizeWebInspiration
-                        ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
-                    title="每次生成隨機換新網路食譜靈感"
+                    onClick={handleCopyQuery}
+                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
                   >
-                    <Shuffle className="w-3.5 h-3.5" />
-                    <span>{randomizeWebInspiration ? '隨機換新 ON' : '隨機換新 OFF'}</span>
+                    {copiedQuery ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-300">已複製完整指令！</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-emerald-300" />
+                        <span>複製完整檢索指令</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -677,6 +817,36 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                   placeholder="例如：不吃牛肉、多用鮭魚與毛豆、偏好多樣蔬菜便當、無麩質、微波便當..."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                 />
+              </div>
+
+              {/* SECTION 6: Optional Paste Google / Ask AI result */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>6. 貼上 Google 搜尋或問問 AI 建議菜單文字（可選）</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsPasteExpanded(!isPasteExpanded)}
+                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
+                  >
+                    {isPasteExpanded ? '收合輸入框' : '展開輸入框'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  若您在 Google 搜尋或問問 AI 中獲得了喜歡的食譜靈感，可直接貼在下方，系統將自動解析為 7 天菜單並等比轉化為 {servings} 人份超市採買清單。
+                </p>
+
+                {isPasteExpanded && (
+                  <textarea
+                    value={pastedGoogleResult}
+                    onChange={(e) => setPastedGoogleResult(e.target.value)}
+                    rows={3}
+                    placeholder="可直接貼上 Google 搜尋找到的菜單文字、食材或食譜建議（若留空則由系統依據上方公式自動全方位聯網生成）..."
+                    className="w-full p-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden bg-white"
+                  />
+                )}
               </div>
             </div>
           )}
