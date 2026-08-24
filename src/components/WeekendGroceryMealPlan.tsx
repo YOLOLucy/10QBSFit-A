@@ -11,11 +11,8 @@ import {
   ChefHat, 
   RefreshCw,
   Info,
-  CheckCircle2,
   CalendarCheck,
   Users,
-  Dna,
-  RotateCcw,
   Globe,
   PlusCircle,
   ExternalLink
@@ -61,9 +58,9 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
       console.error(e);
     }
     return {
-      servings: 2,
-      themeTitle: 'Dr. Andy Galpin 7天全食物增肌修復與代謝平衡菜單',
-      galpinSummary: '依據 Dr. Andy Galpin 人體生理學：每餐 30-45g 蛋白質啟動 MPS、低 GI 原型碳水週期化補給、豐富抗發炎 Omega-3 與彩虹抗氧化植化素。',
+      servings: 1,
+      themeTitle: 'Google 問問 AI：依加爾平理論設計之 1898kcal 菜單 (1人份)',
+      galpinSummary: '此菜單依循安迪·加爾平博士的運動營養學原則，旨在透過每日約 124 克蛋白質的攝取，並確保每餐蛋白質含量達到 30-45 克以可靠地觸發肌肉蛋白質合成 (MPS)。餐點結合低升糖指數的全穀物與豐富的優質脂肪，有助於穩定血糖、維持能量，並促進全身性代謝優化。所有食材皆為原型食物，並與採買清單 100% 完全同步，確保飲食執行效益最大化。',
       isAiCustomized: false,
     };
   });
@@ -206,20 +203,6 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
     }
   };
 
-  const handleRestoreDefaultPlan = () => {
-    if (window.confirm('確定要恢復為官方標準版 7 天建議菜單與採買清單嗎？')) {
-      saveMealPlan(WEEKLY_MEAL_PLAN);
-      saveGroceryList(INITIAL_GROCERY_LIST);
-      savePlanMeta({
-        servings: 2,
-        themeTitle: 'Dr. Andy Galpin 7天全食物增肌修復與代謝平衡菜單',
-        galpinSummary: '依據 Dr. Andy Galpin 人體生理學：每餐 30-45g 蛋白質啟動 MPS、低 GI 原型碳水週期化補給、豐富抗發炎 Omega-3 與彩虹抗氧化植化素。',
-        isAiCustomized: false,
-      });
-      setSelectedDayIdx(0);
-    }
-  };
-
   const handleApplyAiPlan = (result: AiMealPlanResult) => {
     saveMealPlan(result.weeklyMealPlan);
     saveGroceryList(result.groceryList);
@@ -311,54 +294,15 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
             </button>
 
             <div className="flex items-center gap-1.5 flex-wrap justify-end">
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-200 bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-500/30">
-                <Users className="w-3.5 h-3.5 text-emerald-300" />
-                <span>{planMeta.servings || 2} 人份規格</span>
-              </span>
-              {planMeta.isAiCustomized && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-200 bg-amber-950/40 px-2.5 py-1 rounded-lg border border-amber-500/30">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Google 問問 AI 專屬方案</span>
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Active Galpin Plan Summary Banner */}
-        <div className="mt-5 p-3.5 rounded-2xl bg-black/25 backdrop-blur border border-white/10 text-xs text-emerald-100 flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-start gap-2.5 flex-1 min-w-[260px]">
-            <Dna className="w-4 h-4 text-emerald-300 shrink-0 mt-0.5" />
-            <div className="space-y-0.5">
-              <div className="font-extrabold text-white flex items-center gap-1.5 flex-wrap">
-                <span>{planMeta.themeTitle || 'Dr. Andy Galpin 7天代謝平衡菜單'}</span>
-                <span className="text-[10px] bg-emerald-700/80 text-emerald-200 px-1.5 py-0.2 rounded">
-                  {planMeta.servings || 2} 人份
-                </span>
-              </div>
-              <p className="text-[11px] text-emerald-200/90 leading-tight">
-                {planMeta.galpinSummary || '每餐 30-45g 蛋白質刺激亮氨酸閾值，促進 MPS 與粒線體修復。'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 self-center">
-            <button
-              onClick={() => setIsAiModalOpen(true)}
-              className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-white text-[11px] font-bold transition-colors"
-            >
-              調整人數/目標
-            </button>
-            {planMeta.isAiCustomized && (
               <button
-                onClick={handleRestoreDefaultPlan}
-                className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-950 text-emerald-300 text-[11px] font-semibold transition-colors flex items-center gap-1"
-                title="恢復官方標準 7 天菜單"
+                onClick={() => setIsAiModalOpen(true)}
+                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-100 bg-emerald-950/60 hover:bg-emerald-800/80 px-3 py-1.5 rounded-lg border border-emerald-500/40 cursor-pointer transition-all hover:scale-105 shadow-xs"
+                title="點擊調整人數與個人目標"
               >
-                <RotateCcw className="w-3 h-3" />
-                <span>恢復標準版</span>
+                <Users className="w-3.5 h-3.5 text-emerald-300" />
+                <span>{planMeta.servings || 1} 人份規格 (點擊調整人數/目標)</span>
               </button>
-            )}
+            </div>
           </div>
         </div>
 

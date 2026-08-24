@@ -453,16 +453,16 @@ export function generateClientGalpinMealPlan(
   const themeIdx = typeof varietySeed === 'number' ? Math.abs(varietySeed) % 3 : 0;
   const themes = [
     {
-      title: `Google 問問 AI：地中海香草海鮮與彩虹抗氧化菜單 (${s}人份・${targetCal}kcal)`,
-      summary: `依據您的身高 ${height}cm、體重 ${weight}kg 與 TDEE ${tdee} kcal，啟動地中海極致抗發炎配置：精算每日 ${targetProt}g 蛋白質 (${proteinPerKg}g/kg)、低 GI 原型碳水 ${targetCarb}g 與冷壓初榨好油脂 ${targetFat}g，嚴選深海鮭魚、舒肥雞胸、酪梨與三色藜麥，採買清單 100% 同步。`
+      title: `Google 問問 AI：依加爾平理論設計之 ${targetCal}kcal 菜單 (${s}人份)`,
+      summary: `此菜單依循安迪·加爾平博士的運動營養學原則，旨在透過每日約 ${targetProt} 克蛋白質的攝取，並確保每餐蛋白質含量達到 30-45 克以可靠地觸發肌肉蛋白質合成 (MPS)。餐點結合低升糖指數的全穀物與豐富的優質脂肪，有助於穩定血糖、維持能量，並促進全身性代謝優化。所有食材皆為原型食物，並與採買清單 100% 完全同步，確保飲食執行效益最大化。`
     },
     {
-      title: `Google 問問 AI：日式和風鹽麴高蛋白與紫米甘藷菜單 (${s}人份・${targetCal}kcal)`,
-      summary: `依據您的身高 ${height}cm、體重 ${weight}kg 與 TDEE ${tdee} kcal，規劃日式和風潔淨全食物：精算每日 ${targetProt}g 蛋白質與每餐 30-45g MPS 亮氨酸閾值，搭配挪威鮭魚排、鮮毛豆板豆腐與紫米地瓜，營養素與超市清單等比縮放。`
+      title: `Google 問問 AI：依加爾平理論設計之 ${targetCal}kcal 菜單 (${s}人份)`,
+      summary: `此菜單依循安迪·加爾平博士的運動營養學原則，旨在透過每日約 ${targetProt} 克蛋白質的攝取，並確保每餐蛋白質含量達到 30-45 克以可靠地觸發肌肉蛋白質合成 (MPS)。餐點結合低升糖指數的全穀物與豐富的優質脂肪，有助於穩定血糖、維持能量，並促進全身性代謝優化。所有食材皆為原型食物，並與採買清單 100% 完全同步，確保飲食執行效益最大化。`
     },
     {
-      title: `Google 問問 AI：普羅旺斯香草慢烤與全食物充能菜單 (${s}人份・${targetCal}kcal)`,
-      summary: `依據您的身高 ${height}cm、體重 ${weight}kg 與 TDEE ${tdee} kcal，規劃歐風慢烤原型餐：精算每日 ${targetProt}g 蛋白質與 ${targetCarb}g 低 GI 碳水，結合香烤雞肉、精瘦牛肉、栗子南瓜與大燕麥，全食材零剩食採買。`
+      title: `Google 問問 AI：依加爾平理論設計之 ${targetCal}kcal 菜單 (${s}人份)`,
+      summary: `此菜單依循安迪·加爾平博士的運動營養學原則，旨在透過每日約 ${targetProt} 克蛋白質的攝取，並確保每餐蛋白質含量達到 30-45 克以可靠地觸發肌肉蛋白質合成 (MPS)。餐點結合低升糖指數的全穀物與豐富的優質脂肪，有助於穩定血糖、維持能量，並促進全身性代謝優化。所有食材皆為原型食物，並與採買清單 100% 完全同步，確保飲食執行效益最大化。`
     }
   ];
 

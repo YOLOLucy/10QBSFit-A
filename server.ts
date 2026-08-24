@@ -1006,7 +1006,7 @@ Return valid JSON in the requested language (${language}) matching the schema pr
 
 請嚴格整合輸出：
 1. themeTitle: 標明【Google 問問 AI：依加爾平理論設計之 ${targetCal}kcal 菜單 (${validServings}人份)】
-2. galpinSummary: 2-3 句中文科學摘要，說明本菜單如何依據安迪·加爾平理論達成 MPS 蛋白質合成、穩定血糖、並與採買清單 100% 完全同步。
+2. galpinSummary: 此菜單依循安迪·加爾平博士的運動營養學原則，旨在透過每日約 ${targetProt} 克蛋白質的攝取，並確保每餐蛋白質含量達到 30-45 克以可靠地觸發肌肉蛋白質合成 (MPS)。餐點結合低升糖指數的全穀物與豐富的優質脂肪，有助於穩定血糖、維持能量，並促進全身性代謝優化。所有食材皆為原型食物，並與採買清單 100% 完全同步，確保飲食執行效益最大化。
 3. weeklyMealPlan: 週一至週日共 7 天完整的早、午、晚、點心營養規劃（含 name, description, caloriesApprox, proteinApprox, carbsApprox, fatsApprox, tags, ingredients）。
 4. groceryList: 完整整合一週 7 天菜單所使用到的【所有原型食材】，依 ${validServings} 人份等比放大採買量，分類為 protein, vegetable, carb, fat_seasoning, fruit_beverage，並清楚標註 mealUsage。`;
 
