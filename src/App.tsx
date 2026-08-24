@@ -6,6 +6,7 @@ import { BalanceSheetResult } from './components/BalanceSheetResult';
 import { TrendAnalysis } from './components/TrendAnalysis';
 import { WeekendGroceryMealPlan } from './components/WeekendGroceryMealPlan';
 import { ProfileModal } from './components/ProfileModal';
+import { PrivacyPolicyModal } from './components/PrivacyPolicyModal';
 import { QuestionBankModal } from './components/QuestionBankModal';
 import { 
   UserProfile, 
@@ -25,6 +26,7 @@ import {
 } from './utils/calculations';
 import { getDailyQuestionsForDate } from './data/questionBank';
 import { sendLocalNotification } from './utils/reminder';
+import { PRIVACY_POLICY_DATA } from './data/privacyPolicyData';
 import { 
   Sparkles, 
   Smartphone, 
@@ -38,12 +40,17 @@ import {
   CheckCircle2,
   Bell,
   X,
-  ArrowRight
+  ArrowRight,
+  ExternalLink,
+  Lock,
+  Mail
 } from 'lucide-react';
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(() => loadUserProfile());
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileModalInitialTab, setProfileModalInitialTab] = useState<'settings' | 'privacy'>('settings');
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [isQuestionBankOpen, setIsQuestionBankOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'questions' | 'balancesheet' | 'trend' | 'grocery' | 'profile'>('home');
   const [mobileViewMode, setMobileViewMode] = useState(false);
@@ -190,7 +197,10 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         profile={profile}
-        onOpenProfile={() => setIsProfileModalOpen(true)}
+        onOpenProfile={() => {
+          setProfileModalInitialTab('settings');
+          setIsProfileModalOpen(true);
+        }}
         onOpenQuestionBank={() => setIsQuestionBankOpen(true)}
         todayCompleted={todayCompleted}
         mobileViewMode={mobileViewMode}
@@ -217,7 +227,10 @@ export default function App() {
               onViewBalanceSheet={() => setActiveTab('balancesheet')}
               onViewTrends={() => setActiveTab('trend')}
               onViewGrocery={() => setActiveTab('grocery')}
-              onOpenProfile={() => setIsProfileModalOpen(true)}
+              onOpenProfile={() => {
+                setProfileModalInitialTab('settings');
+                setIsProfileModalOpen(true);
+              }}
               onOpenQuestionBank={() => setIsQuestionBankOpen(true)}
               currentLanguage={currentLanguage}
             />
@@ -301,30 +314,60 @@ export default function App() {
         </div>
       </main>
 
-      {/* Footer Info & 30 NTD single purchase guarantee */}
+      {/* Footer Info & Privacy / Disclaimer */}
       <footer className="mt-auto border-t border-slate-200/80 bg-white py-4 px-4 text-center text-xs text-slate-500">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-800">10QBS</span>
+            <span className="text-slate-300">|</span>
+            <span className="text-[11px] text-slate-500">
+              極簡 10 題每日健康資產負債表
+            </span>
           </div>
 
-          <div className="flex items-center gap-3 text-[11px] text-slate-400">
-            <span className="flex items-center gap-1">
+          <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                setProfileModalInitialTab('privacy');
+                setIsProfileModalOpen(true);
+              }}
+              className="flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-semibold underline decoration-emerald-300 transition-colors"
+              title="檢視完整官方隱私權條款與資料保護說明"
+            >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>本機離線隱私加密儲存</span>
-            </span>
+              <span>隱私權政策與法律聲明</span>
+            </button>
+
             <span className="text-slate-300">•</span>
-            <span>NT$ 30 終身買斷版</span>
+
+            <a
+              href={PRIVACY_POLICY_DATA.liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-slate-400 hover:text-slate-600 flex items-center gap-0.5 transition-colors"
+              title="前往 FreePrivacyPolicy 官方備案頁面"
+            >
+              <span>條款公開連結</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
           </div>
         </div>
       </footer>
 
-      {/* Profile Settings Modal */}
+      {/* Profile Settings Modal (個人化設定與隱私權說明) */}
       <ProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
         profile={profile}
         onSaveProfile={handleSaveProfile}
+        initialTab={profileModalInitialTab}
+      />
+
+      {/* Standalone Privacy Policy Modal */}
+      <PrivacyPolicyModal
+        isOpen={isPrivacyModalOpen}
+        onClose={() => setIsPrivacyModalOpen(false)}
       />
 
       {/* Question Bank Manager & Expansion Packs (每次50題加購10元) Modal */}

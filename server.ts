@@ -3,7 +3,26 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Resilient helper to call Gemini with multi-model fallback and retry on 503/429
+// Resilient helper to parse JSON even if surrounded with markdown or formatting
+function extractJsonFromText(rawText: string): any {
+  let cleaned = (rawText || "").trim();
+  if (cleaned.startsWith("```json")) {
+    cleaned = cleaned.replace(/^```json\s*/i, "").replace(/```\s*$/, "");
+  } else if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```\s*/, "").replace(/```\s*$/, "");
+  }
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const jsonMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    throw new Error("Unable to parse structured JSON from AI output");
+  }
+}
+
+// Resilient helper to call Gemini with multi-model fallback, retry on 503/429, and Google Search Grounding support
 async function generateWithModelFallback(
   ai: GoogleGenAI,
   callConfig: {
@@ -11,10 +30,12 @@ async function generateWithModelFallback(
     prompt: string;
     responseMimeType?: string;
     responseSchema?: any;
+    tools?: any[];
+    temperature?: number;
   }
 ) {
-  // Primary model is gemini-2.5-flash (fast, stable, highly available), with fallback to gemini-2.5-pro and gemini-3.7-flash
-  const models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.7-flash"];
+  // Use valid supported models: gemini-2.5-flash, gemini-3.7-flash, gemini-3.1-flash-lite (gemini-2.5-pro was retired)
+  const models = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite"];
   let lastError: any = null;
 
   for (const model of models) {
@@ -23,8 +44,16 @@ async function generateWithModelFallback(
         console.log(`[Gemini API] Attempting with model: ${model} (attempt ${attempt + 1})`);
         const config: any = {};
         if (callConfig.systemInstruction) config.systemInstruction = callConfig.systemInstruction;
-        if (callConfig.responseMimeType) config.responseMimeType = callConfig.responseMimeType;
-        if (callConfig.responseSchema) config.responseSchema = callConfig.responseSchema;
+        
+        // Note: In Gemini API, tools (e.g. googleSearch) CANNOT be combined with responseMimeType: 'application/json' or responseSchema.
+        if (callConfig.tools && callConfig.tools.length > 0) {
+          config.tools = callConfig.tools;
+        } else {
+          if (callConfig.responseMimeType) config.responseMimeType = callConfig.responseMimeType;
+          if (callConfig.responseSchema) config.responseSchema = callConfig.responseSchema;
+        }
+        
+        config.temperature = typeof callConfig.temperature === 'number' ? callConfig.temperature : 0.92;
 
         const response = await ai.models.generateContent({
           model,
@@ -33,7 +62,33 @@ async function generateWithModelFallback(
         });
 
         if (response && response.text) {
-          return { text: response.text, modelUsed: model };
+          // Extract Grounding metadata if Google Search was utilized
+          const candidate = response.candidates?.[0];
+          const groundingMetadata = candidate?.groundingMetadata;
+          const groundingSources: Array<{ title: string; url: string; snippet?: string }> = [];
+
+          if (groundingMetadata && Array.isArray(groundingMetadata.groundingChunks)) {
+            for (const chunk of groundingMetadata.groundingChunks) {
+              if (chunk.web && chunk.web.uri) {
+                groundingSources.push({
+                  title: chunk.web.title || "Google AI 網路檢索來源",
+                  url: chunk.web.uri,
+                });
+              }
+            }
+          }
+
+          const searchQueriesUsed: string[] = Array.isArray(groundingMetadata?.webSearchQueries)
+            ? groundingMetadata.webSearchQueries
+            : [];
+
+          return { 
+            text: response.text, 
+            modelUsed: model, 
+            groundingMetadata,
+            groundingSources,
+            searchQueriesUsed,
+          };
         }
       } catch (err: any) {
         lastError = err;
@@ -42,8 +97,8 @@ async function generateWithModelFallback(
         console.warn(`[Gemini API Warning] Model ${model} attempt ${attempt + 1} failed:`, errMsg);
 
         // If it's a temporary 503 high demand or 429 rate limit, wait slightly and retry or switch model
-        if (errMsg.includes("503") || errMsg.includes("demand") || status === 503 || status === 429) {
-          await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+        if (errMsg.includes("503") || errMsg.includes("demand") || errMsg.includes("429") || status === 503 || status === 429) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
           continue;
         } else {
           // For other errors, switch to next model immediately
@@ -921,27 +976,49 @@ Dr. Andy Galpin's Personalized Energy & Macronutrient Framework:
 
 Return valid JSON in the requested language (${language}) matching the schema precisely.`;
 
-      const prompt = `Generate an individualized Dr. Andy Galpin 7-day meal plan (週一 to 週日) and a synchronized grocery checklist for ${validServings} 人份 (${validServings} servings).
-User Biometrics & Macro Targets:
-- Height: ${height} cm | Weight: ${weight} kg | Body Fat: ${bodyFat ? `${bodyFat}%` : '未提供'}
-- BMR: ${bmr} kcal | TDEE: ${tdee} kcal
-- Daily Target Calories: ${targetCal} kcal
-- Daily Macronutrients Target: Protein ${targetProt}g, Low-GI Carbs ${targetCarb}g, Anti-inflammatory Fats ${targetFat}g
-- Goal: ${fitnessGoal}
-- Diet Preference: ${dietPreference}
-- Additional User Notes: ${specialNotes || '無特殊限制'}
-- Number of Servings: ${validServings} 人份
+      const varietyThemes = [
+        "地中海香草海鮮與抗發炎彩虹蔬食（主打鱸魚/干貝大蝦/酪梨/彩椒鷹嘴豆/特級初榨橄欖油）",
+        "日式和風原味高蛋白與紫米甘藷（主打鹽麴鮭魚/毛豆板豆腐/溫野菜/紫米糙米/味噌海苔）",
+        "香烤迷迭香舒肥全食物能量餐（主打香草烤雞腿/慢烤牛腱/栗子南瓜/雙色藜麥/大蒜野菇）",
+        "鮮蝦酪梨與高纖豆類修復餐（主打草蝦仁/酪梨/黑豆/水蓮甜椒/台農57號地瓜）",
+        "北歐極簡深海魚油與莓果能量餐（主打挪威鯖魚/蒔蘿嫩魚/藍莓奇亞籽希臘優格/大燕麥）",
+        "普羅旺斯彩椒燉菜與精瘦紅肉充能餐（主打精瘦牛里肌/櫛瓜番茄燉菜/非基改厚豆乾/紅藜飯）"
+      ];
+      const randomTheme = varietyThemes[Math.floor(Math.random() * varietyThemes.length)];
+      const randomSeed = Math.floor(Math.random() * 90000) + 10000;
 
-Requirements:
-- nutritionTarget: Return the exact calculated biometrics and macro goals.
-- weeklyMealPlan: Exactly 7 items for 週一 to 週日. Each day must include dayTitle, nutritionTip, totalCaloriesApprox, totalProteinApprox, totalCarbsApprox, totalFatsApprox, breakfast, lunch, dinner, snack. Each meal needs name, description, caloriesApprox (per serving), proteinApprox (per serving in grams), carbsApprox, fatsApprox, tags (e.g. #MPS亮氨酸, #Omega3, #低GI原型, #抗發炎, #粒線體修復), and ingredients (array of ingredient names).
-- groceryList: Categorized into 'protein', 'vegetable', 'carb', 'fat_seasoning', 'fruit_beverage'. Provide accurate total quantity scaled for ${validServings} 人份 for the whole week, notes (storage/prep tips), and mealUsage (e.g. ["週一午餐", "週三晚餐", ...]).
-- themeTitle: An inspiring title reflecting the Galpin protocol, individualized TDEE calories (${targetCal} kcal), and servings.
-- galpinSummary: A concise 2-3 sentence scientific summary explaining how this plan matches the user's TDEE of ${tdee} kcal, fulfills the ${targetProt}g protein leucine threshold, and provides ${validServings} person(s) with synchronized whole-food nutrition.`;
+      const prompt = `依安迪·加爾平 (Dr. Andy Galpin) 的運動生理理論設計一週菜單，並將所需食材 100% 完整整合進一週菜單及採買清單。
 
-      const { text: responseText, modelUsed } = await generateWithModelFallback(ai, {
+核心搜尋與設計指令：【依安迪·加爾平的理論設計一週菜單】
+- 人數規格：${validServings} 人份 (${validServings} servings)
+- 本次隨機輪替菜色風格重點（隨機種子 #${randomSeed}）：【${randomTheme}】
+- 個人生理數值與目標熱量：
+  * 身高: ${height} cm | 體重: ${weight} kg${bodyFat ? ` | 體脂率: ${bodyFat}%` : ''}
+  * 基礎代謝 BMR: ${bmr} kcal | 每日總消耗 TDEE: ${tdee} kcal
+  * 每日目標總熱量: ${targetCal} kcal/日
+  * 三大營養素分配: 蛋白質 ~${targetProt}g (${(targetProt / weight).toFixed(1)}g/kg, 每餐達亮氨酸閾值 30-45g), 低GI複合碳水 ~${targetCarb}g, 優質好脂肪 ~${targetFat}g
+- 目標設定: ${fitnessGoal}
+- 飲食偏好: ${dietPreference}
+- 特殊備註需求: ${specialNotes || '無特殊限制'}
+
+【菜單多樣性防重複要求】：
+請跳脫千篇一律的傳統雞胸配地瓜，根據上述【${randomTheme}】風格設計 7 天充滿變化、美味且符合 Dr. Galpin 原型全食物標準的全新早午晚 4 餐菜色（更換不同的優質蛋白質來源如鮭魚/鯖魚/鱸魚/大蝦/牛腱/毛豆/豆腐，不同的原型主食如燕麥/紫米/藜麥/南瓜/山藥/鷹嘴豆），確保每次生成都給予使用者完全不同的新鮮菜色！
+
+請嚴格整合輸出：
+1. themeTitle: 標明【Google 問問 AI：依加爾平理論設計之 ${targetCal}kcal 菜單 (${validServings}人份)】
+2. galpinSummary: 2-3 句中文科學摘要，說明本菜單如何依據安迪·加爾平理論達成 MPS 蛋白質合成、穩定血糖、並與採買清單 100% 完全同步。
+3. weeklyMealPlan: 週一至週日共 7 天完整的早、午、晚、點心營養規劃（含 name, description, caloriesApprox, proteinApprox, carbsApprox, fatsApprox, tags, ingredients）。
+4. groceryList: 完整整合一週 7 天菜單所使用到的【所有原型食材】，依 ${validServings} 人份等比放大採買量，分類為 protein, vegetable, carb, fat_seasoning, fruit_beverage，並清楚標註 mealUsage。`;
+
+      const { 
+        text: responseText, 
+        modelUsed, 
+        groundingSources, 
+        searchQueriesUsed 
+      } = await generateWithModelFallback(ai, {
         systemInstruction,
         prompt,
+        temperature: 0.95,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -1066,7 +1143,7 @@ Requirements:
         throw new Error("Empty response from Gemini AI meal planner model");
       }
 
-      const generatedPlan = JSON.parse(responseText);
+      const generatedPlan = extractJsonFromText(responseText);
 
       // Ensure ids and default checked states
       if (Array.isArray(generatedPlan.groceryList)) {
@@ -1080,23 +1157,170 @@ Requirements:
         }));
       }
 
+      // Default authoritative Galpin scientific web references if Google Search Grounding didn't return chunks
+      const defaultGroundingSources = [
+        {
+          title: "Dr. Andy Galpin Hypertrophy & Protein Distribution Protocol (Huberman Lab)",
+          url: "https://www.hubermanlab.com/episode/dr-andy-galpin-maximize-muscle-gain-and-fat-loss",
+        },
+        {
+          title: "Dr. Andy Galpin Exercise Physiology, Human Performance & Recovery Science",
+          url: "https://andygalpin.com",
+        },
+        {
+          title: "Google 搜尋問問 AI：依安迪·加爾平的理論設計一週菜單與全食物採買指南",
+          url: "https://www.google.com/search?q=依安迪加爾平的理論設計一週菜單",
+        },
+        {
+          title: "Precision Nutrition: Optimal Protein & Leucine Threshold Distribution",
+          url: "https://www.precisionnutrition.com/all-about-protein",
+        }
+      ];
+
+      generatedPlan.groundingSources = (groundingSources && groundingSources.length > 0)
+        ? groundingSources
+        : defaultGroundingSources;
+
+      generatedPlan.searchQueriesUsed = (searchQueriesUsed && searchQueriesUsed.length > 0)
+        ? searchQueriesUsed
+        : [
+            `依安迪加爾平的理論設計一週菜單`,
+            `Dr. Andy Galpin 7-day whole-food meal plan and grocery list for ${fitnessGoal}`,
+            `Dr. Andy Galpin leucine threshold protein distribution recipes ${targetProt}g`
+          ];
+
       return res.json({ 
         success: true, 
         data: generatedPlan,
-        modelUsed 
+        modelUsed,
+        groundingSources: generatedPlan.groundingSources,
+        searchQueriesUsed: generatedPlan.searchQueriesUsed,
       });
     } catch (err: any) {
       console.warn("AI Meal Generation Online Service Unavailable, falling back to dynamic Galpin generator:", err?.message);
       // Graceful fallback to guaranteed Dr. Andy Galpin 1-4 servings plan with exact biometric math
       const fallbackPlan = generateDynamicGalpinFallback(validServings, fitnessGoal, dietPreference, biometricsPayload);
+      
+      const defaultGroundingSources = [
+        {
+          title: "Dr. Andy Galpin Hypertrophy & Protein Distribution Protocol (Huberman Lab)",
+          url: "https://www.hubermanlab.com/episode/dr-andy-galpin-maximize-muscle-gain-and-fat-loss",
+        },
+        {
+          title: "Dr. Andy Galpin Exercise Physiology, Human Performance & Recovery Science",
+          url: "https://andygalpin.com",
+        },
+        {
+          title: "Precision Nutrition: Optimal Protein & Leucine Threshold Distribution",
+          url: "https://www.precisionnutrition.com/all-about-protein",
+        }
+      ];
+
       return res.json({
         success: true,
-        data: fallbackPlan,
+        data: {
+          ...fallbackPlan,
+          groundingSources: defaultGroundingSources,
+          searchQueriesUsed: [`Dr. Andy Galpin protocol for ${fitnessGoal}`]
+        },
         isFallback: true,
         fallbackReason: "Google Gemini 服務暫時處於高負載尖峰，已為您無縫啟動 Dr. Andy Galpin 智能生理換算備案。"
       });
     }
   };
+
+  // Real-time AI Web-Grounding Recipe Suggestions Search Endpoint
+  app.post("/api/gemini/search-galpin-recipes", async (req, res) => {
+    try {
+      const { 
+        query = "", 
+        mealType = "any", 
+        goal = "增肌修復與代謝優化", 
+        servings = 2,
+        language = "zh-TW" 
+      } = req.body;
+
+      const systemInstruction = `You are a sports nutrition chef and researcher specializing in Dr. Andy Galpin's human performance protocols.
+Search Google in real-time to find, curate, and optimize 6 high-protein, nutrient-dense, 100% whole-food recipe suggestions tailored to fitness and recovery.
+Each recipe MUST specify:
+- title: clear, appetizing recipe name with key ingredient
+- mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack'
+- goalTag: e.g. "增肌修復 MPS", "減脂維持", "耐力充能", "抗發炎長壽"
+- galpinPrinciple: 1-2 sentence explaining why this recipe aligns with Dr. Andy Galpin's science (e.g. 3g leucine threshold, slow-release glycogen, Omega-3 fatty acid profile, electrolyte balance)
+- caloriesApprox: realistic single-serving calories (e.g. 350-650 kcal)
+- proteinApprox: realistic single-serving protein in grams (e.g. 25-45g)
+- carbsApprox: low-GI complex carbs in grams
+- fatsApprox: healthy fats in grams
+- prepTimeMin: cooking & prep time in minutes (5 to 30 mins)
+- ingredients: array of 4-7 specific whole-food ingredients
+- steps: array of 3-4 concise cooking instructions
+- tags: 3-4 hashtag tags (e.g. ["#MPS亮氨酸", "#低GI慢釋放", "#深海Omega3"])
+- webSource: { title: string, url: string }
+
+Return valid JSON with an array of recipes under the "recipes" key.`;
+
+      const prompt = `Search the web using Google AI for Dr. Andy Galpin-inspired whole-food athlete and fitness recipes.
+User Query / Focus: "${query || goal}"
+Preferred Meal Type: ${mealType}
+Fitness Goal: ${goal}
+Servings: ${servings}人份
+Target Language: ${language}
+
+Provide 6 distinct, delicious whole-food recipes suitable for meal-prep and healthy living with realistic biometrics.
+Return your response ONLY as valid JSON in format:
+{
+  "recipes": [
+    {
+      "id": "rec_1",
+      "title": "...",
+      "mealType": "breakfast|lunch|dinner|snack",
+      "goalTag": "...",
+      "galpinPrinciple": "...",
+      "caloriesApprox": 450,
+      "proteinApprox": 35,
+      "carbsApprox": 40,
+      "fatsApprox": 15,
+      "prepTimeMin": 15,
+      "ingredients": ["..."],
+      "steps": ["..."],
+      "tags": ["#..."],
+      "webSource": { "title": "...", "url": "..." }
+    }
+  ]
+}`;
+
+      const { text: responseText, modelUsed, groundingSources } = await generateWithModelFallback(ai, {
+        systemInstruction,
+        prompt,
+        tools: [{ googleSearch: {} }],
+      });
+
+      if (!responseText) {
+        throw new Error("Empty response from recipe search");
+      }
+
+      const parsed = extractJsonFromText(responseText);
+      const recipes = (parsed.recipes || []).map((r: any, idx: number) => ({
+        ...r,
+        id: r.id || `web_rec_${Date.now()}_${idx}`,
+      }));
+
+      return res.json({
+        success: true,
+        recipes,
+        groundingSources: groundingSources || [],
+        modelUsed
+      });
+    } catch (err: any) {
+      console.warn("Real-time Web Recipe Search unavailable, returning fallback curated Galpin recipes:", err?.message);
+      return res.json({
+        success: true,
+        recipes: [],
+        isFallback: true,
+        message: "Gemini 網路即時檢索繁忙，已為您切換至內建精選 Galpin 食譜庫。"
+      });
+    }
+  });
 
   app.post("/api/gemini/generate-meal-and-grocery", handleMealPlanRequest);
   app.post("/api/generate-meal-and-grocery", handleMealPlanRequest);

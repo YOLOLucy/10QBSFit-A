@@ -122,6 +122,32 @@ export interface MealItem {
   ingredients?: string[]; // List of required ingredients
 }
 
+export interface GroundingSource {
+  title: string;
+  url: string;
+  snippet?: string;
+}
+
+export interface WebRecipeSuggestion {
+  id: string;
+  title: string;
+  mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  goalTag: string;
+  galpinPrinciple: string;
+  caloriesApprox: number;
+  proteinApprox: number;
+  carbsApprox: number;
+  fatsApprox: number;
+  prepTimeMin: number;
+  ingredients: string[];
+  steps: string[];
+  tags: string[];
+  webSource?: {
+    title: string;
+    url: string;
+  };
+}
+
 export interface DayMealPlan {
   dayOfWeek: string; // '週一', '週二', etc.
   dayTitle: string;

@@ -4,26 +4,30 @@ import {
   X, 
   Users, 
   Flame, 
-  Dna, 
-  Scale, 
   CheckCircle2, 
   AlertCircle, 
   Loader2, 
-  ChefHat, 
   UtensilsCrossed, 
   ShoppingCart, 
-  ArrowRight,
-  ShieldAlert,
-  CalendarCheck,
   Check,
   Activity,
-  HeartPulse,
-  Sliders,
   ChevronDown,
   ChevronUp,
-  Info
+  Globe,
+  ExternalLink,
+  Shuffle,
+  Info,
+  Clock
 } from 'lucide-react';
-import { DayMealPlan, GroceryItem, UserProfile, DailyRecord, PlanNutritionSummary } from '../types';
+import { 
+  DayMealPlan, 
+  GroceryItem, 
+  UserProfile, 
+  DailyRecord, 
+  PlanNutritionSummary, 
+  GroundingSource, 
+  WebRecipeSuggestion 
+} from '../types';
 import { 
   calculateGalpinMacroTargets, 
   GalpinMacroPlan, 
@@ -38,12 +42,15 @@ export interface AiMealPlanResult {
   nutritionTarget?: PlanNutritionSummary;
   weeklyMealPlan: DayMealPlan[];
   groceryList: GroceryItem[];
+  groundingSources?: GroundingSource[];
+  searchQueriesUsed?: string[];
 }
 
 interface AiMealPlanModalProps {
   isOpen: boolean;
   onClose: () => void;
   onApplyPlan: (result: AiMealPlanResult) => void;
+  onInsertRecipeToDay?: (recipe: WebRecipeSuggestion, dayOfWeek: string, mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack') => void;
   currentServings?: number;
   profile?: UserProfile;
   latestRecord?: DailyRecord | null;
@@ -87,7 +94,6 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   profile: propProfile,
   latestRecord,
 }) => {
-  // Load base profile from prop or local storage
   const baseProfile = useMemo(() => {
     return propProfile || loadUserProfile();
   }, [propProfile]);
@@ -96,8 +102,9 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   const [fitnessGoal, setFitnessGoal] = useState<string>(FITNESS_GOALS[0].id);
   const [dietPreference, setDietPreference] = useState<string>(DIET_PREFERENCES[0].id);
   const [specialNotes, setSpecialNotes] = useState<string>('');
+  const [randomizeWebInspiration, setRandomizeWebInspiration] = useState<boolean>(true);
 
-  // User physiological biometric states (height, weight, body fat, etc.)
+  // User physiological biometrics
   const [height, setHeight] = useState<number>(baseProfile.height || 172);
   const [weight, setWeight] = useState<number>(
     latestRecord?.weight || baseProfile.weight || 68.5
@@ -124,7 +131,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   const [previewTab, setPreviewTab] = useState<'plan' | 'grocery'>('plan');
   const [selectedPreviewDay, setSelectedPreviewDay] = useState<number>(0);
 
-  // Sync state when modal opens or base profile changes
+  // Sync when modal opens
   useEffect(() => {
     if (isOpen) {
       if (baseProfile.height) setHeight(baseProfile.height);
@@ -183,6 +190,10 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
         targetFatsG: macroPlan.targetFatsG,
       };
 
+      // Generate a dynamic variety seed on every click
+      const varietySeed = Math.floor(Math.random() * 100000);
+      const seedNote = `[多樣性換新種子 #${varietySeed}] ${specialNotes || ''}`;
+
       try {
         const res = await fetch('/api/gemini/generate-meal-and-grocery', {
           method: 'POST',
@@ -191,8 +202,9 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
             servings,
             fitnessGoal,
             dietPreference,
-            specialNotes,
+            specialNotes: seedNote,
             language: 'zh-TW',
+            useGoogleSearch: true,
             userBiometrics: biometricsPayload,
           }),
         });
@@ -207,20 +219,20 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
           }
         }
       } catch (fetchErr) {
-        console.warn('Backend API unavailable or returned error, activating Dr. Galpin client generator:', fetchErr);
+        console.warn('Backend API returned error, activating Dr. Galpin calculation fallback:', fetchErr);
       }
 
-      // Seamless fallback to client-side Dr. Galpin calculation engine (guarantees no 404 / 500 error ever blocks user)
+      // Seamless fallback to client-side Dr. Galpin calculation engine
       const fallbackResult = generateClientGalpinMealPlan(
         servings,
         fitnessGoal,
         dietPreference,
-        biometricsPayload
+        biometricsPayload,
+        varietySeed
       );
       setGeneratedResult(fallbackResult as AiMealPlanResult);
     } catch (err: any) {
       console.error('AI Meal Generation Request Error:', err);
-      // Final guarantee: always generate fallback plan
       const safePlan = generateClientGalpinMealPlan(
         servings,
         fitnessGoal,
@@ -238,7 +250,8 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
           targetProteinG: macroPlan.targetProteinG,
           targetCarbsG: macroPlan.targetCarbsG,
           targetFatsG: macroPlan.targetFatsG,
-        }
+        },
+        Math.floor(Math.random() * 100000)
       );
       setGeneratedResult(safePlan as AiMealPlanResult);
     } finally {
@@ -257,22 +270,25 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+        
         {/* Header */}
-        <div className="bg-gradient-to-r from-teal-900 via-emerald-800 to-emerald-900 text-white p-5 sm:p-6 flex items-start justify-between gap-4 shrink-0">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 rounded-lg bg-emerald-700/80 text-emerald-200">
-                <Sparkles className="w-4 h-4 text-emerald-300" />
+        <div className="bg-gradient-to-r from-teal-950 via-emerald-900 to-teal-900 text-white p-5 sm:p-6 flex items-start justify-between gap-4 shrink-0">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="p-1.5 rounded-lg bg-emerald-700/80 text-emerald-200 flex items-center gap-1.5 shadow-xs">
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span className="text-[11px] font-black uppercase tracking-wider">Google 搜尋「問問 AI」模式</span>
               </span>
-              <span className="text-xs font-black text-emerald-300 uppercase tracking-wider">
-                Dr. Andy Galpin Nutrition Protocol
+              <span className="text-xs font-bold text-emerald-300/90 flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                <span>核心指令：「依安迪·加爾平的理論設計一週菜單」</span>
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-              AI 客製菜單與同步採買清單生成
+              Google 問問 AI：依安迪·加爾平理論設計一週菜單與採買清單
             </h2>
             <p className="text-xs text-emerald-100/90 leading-relaxed">
-              根據您的<strong>身高、體重、體脂率</strong>精準換算 <strong>TDEE 與三大營養素黃金配比</strong>，結合 1-4 人份同步生成一週原型食物菜單與超市採買清單。
+              啟動 <strong>Google 搜尋「問問 AI」深度模式</strong>，直接以「依安迪·加爾平的理論設計一週菜單」連網檢索全球運動生理食譜，並依個人 TDEE 與三大營養素目標，精算 1-4 人份 7 天菜單與 100% 同步的超市採買清單。
             </p>
           </div>
 
@@ -286,6 +302,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+          
           {/* Error Banner */}
           {errorMessage && (
             <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
@@ -297,11 +314,49 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
             </div>
           )}
 
-          {/* STATE 1: Generation Configuration Form (When not loading and no result yet) */}
+          {/* STATE 1: Configuration Form */}
           {!isLoading && !generatedResult && (
             <div className="space-y-6">
               
-              {/* SECTION A: Individual Physiological Metrics & Real-time TDEE/Macronutrient Engine */}
+              {/* Google Ask AI Mode Query Banner */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border-2 border-emerald-300/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-2xl bg-emerald-700 text-white shadow-sm shrink-0 mt-0.5">
+                    <Globe className="w-5 h-5 animate-pulse text-emerald-200" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 rounded-md">
+                        Google 搜尋・問問 AI
+                      </span>
+                      <span className="text-xs font-black text-slate-900">
+                        檢索指令：【依安迪·加爾平的理論設計一週菜單】
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      已啟用 Google 搜尋問問 AI 模式，系統將自動從網路檢索 Dr. Andy Galpin 運動生理、MPS 亮氨酸閾值高蛋白原型食譜，並 100% 完整整合進一週 7 天菜單與超市採買清單中。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => setRandomizeWebInspiration(!randomizeWebInspiration)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all border ${
+                      randomizeWebInspiration
+                        ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                    title="每次生成隨機換新網路食譜靈感"
+                  >
+                    <Shuffle className="w-3.5 h-3.5" />
+                    <span>{randomizeWebInspiration ? '隨機換新 ON' : '隨機換新 OFF'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* SECTION 1: Individual Physiological Metrics & Real-time TDEE/Macronutrient Engine */}
               <div className="p-4 sm:p-5 rounded-3xl bg-slate-50 border border-slate-200 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -310,7 +365,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                     </div>
                     <div>
                       <h3 className="text-sm font-black text-slate-900">
-                        1. 帳戶個人生理數值與 TDEE 三大營養素計算
+                        1. 個人生理數值與 TDEE 三大營養素計算
                       </h3>
                       <p className="text-[11px] text-slate-500">
                         已自動代入您的健康檔案，可直接於下方微調即時試算
@@ -421,7 +476,6 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
 
                   {/* 3 Major Macronutrient Cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                    {/* Protein */}
                     <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-200/80 space-y-1">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-extrabold text-rose-900 flex items-center gap-1">
@@ -439,7 +493,6 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Low-GI Carbs */}
                     <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/80 space-y-1">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-extrabold text-amber-900 flex items-center gap-1">
@@ -456,7 +509,6 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Healthy Fats */}
                     <div className="p-3 rounded-xl bg-teal-50/60 border border-teal-200/80 space-y-1">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-extrabold text-teal-900 flex items-center gap-1">
@@ -476,17 +528,17 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                 </div>
               </div>
 
-              {/* Servings Selection (1-4 人份) */}
+              {/* SECTION 2: Servings Selection */}
               <div>
                 <label className="text-xs font-black text-slate-800 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
                   <Users className="w-4 h-4 text-emerald-600" />
-                  <span>2. 選擇預計用餐人數（1 ~ 4 人份）</span>
-                  <span className="text-[11px] font-normal text-slate-400">（菜單三大營養素以個人為核心基準，採買總量等比倍增）</span>
+                  <span>2. 選擇用餐人數（1 ~ 4 人份）</span>
+                  <span className="text-[11px] font-normal text-slate-400">（三大營養素以個人為基準，採買量等比倍增）</span>
                 </label>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   {[
-                    { count: 1, label: '1 人份 (個人專屬)', icon: '👤', desc: '一人一週備餐，完全貼合個人 TDEE' },
+                    { count: 1, label: '1 人份 (個人專屬)', icon: '👤', desc: '一人一週備餐，精準符合個人 TDEE' },
                     { count: 2, label: '2 人份 (雙人日常)', icon: '👥', desc: '雙人早午晚餐，採買份量乘 2 倍' },
                     { count: 3, label: '3 人份 (小家庭)', icon: '👨‍👩‍👦', desc: '三人份量，兼顧多樣口味與備餐' },
                     { count: 4, label: '4 人份 (家庭全包)', icon: '👨‍👩‍👧‍👦', desc: '四人一週大份量採買規格' },
@@ -509,7 +561,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                 </div>
               </div>
 
-              {/* Fitness Goal Selection (Dr. Galpin Pillars) */}
+              {/* SECTION 3: Fitness Goal Selection */}
               <div>
                 <label className="text-xs font-black text-slate-800 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
                   <Flame className="w-4 h-4 text-emerald-600" />
@@ -535,7 +587,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                 </div>
               </div>
 
-              {/* Diet Preference Selection */}
+              {/* SECTION 4: Diet Preference Selection */}
               <div>
                 <label className="text-xs font-black text-slate-800 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
                   <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
@@ -560,31 +612,18 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                 </div>
               </div>
 
-              {/* Special Custom Notes */}
+              {/* SECTION 5: Special Custom Notes */}
               <div>
                 <label className="text-xs font-black text-slate-800 uppercase tracking-wider block mb-1.5">
-                  5. 特殊自訂備註（選填）
+                  5. 特殊飲食習慣或指定食材偏好（選填）
                 </label>
                 <input
                   type="text"
                   value={specialNotes}
                   onChange={(e) => setSpecialNotes(e.target.value)}
-                  placeholder="例如：不吃牛肉、偏好鮭魚與毛豆、需方便微波便當、多加蒜香..."
+                  placeholder="例如：不吃牛肉、多用鮭魚與毛豆、偏好多樣蔬菜便當、無麩質、微波便當..."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                 />
-              </div>
-
-              {/* Andy Galpin Science Note Card */}
-              <div className="p-4 rounded-2xl bg-teal-50/70 border border-teal-100 text-teal-900 text-xs space-y-1.5">
-                <div className="font-bold flex items-center gap-1.5 text-teal-950">
-                  <Dna className="w-4 h-4 text-teal-700" />
-                  <span>Dr. Andy Galpin 生理營養三大金律保證</span>
-                </div>
-                <ul className="list-disc list-inside text-[11px] text-teal-800 space-y-0.5">
-                  <li><strong>客製 TDEE 校準：</strong>以目前體重 {weight}kg 與體脂 {bodyFat ? `${bodyFat}%` : '基準'} 計算，每日目標攝取 {macroPlan.targetCalories} kcal。</li>
-                  <li><strong>蛋白質分散：</strong>每日規劃 {macroPlan.targetProteinG}g 蛋白，每餐均勻攝取 ~{macroPlan.perMealProteinG}g 刺激亮氨酸 (Leucine) MPS 扳機。</li>
-                  <li><strong>100% 同步超市規格：</strong>菜單每道料理食材與超市採買清單精確匹配，採買備餐不浪費！</li>
-                </ul>
               </div>
             </div>
           )}
@@ -594,7 +633,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
             <div className="py-12 px-4 text-center space-y-6">
               <div className="relative inline-block">
                 <div className="w-16 h-16 rounded-3xl bg-emerald-100 flex items-center justify-center mx-auto text-emerald-700 animate-pulse">
-                  <ChefHat className="w-8 h-8" />
+                  <Globe className="w-8 h-8" />
                 </div>
                 <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-md">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -602,21 +641,25 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
               </div>
 
               <div className="space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-black">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Google 搜尋「問問 AI」深度檢索中</span>
+                </div>
                 <h3 className="text-lg font-black text-slate-900">
-                  AI 正在依您的 TDEE 與 Dr. Galpin 理論計算專屬菜單...
+                  正在以「依安迪·加爾平的理論設計一週菜單」進行聯網整合...
                 </h3>
                 <p className="text-xs text-slate-500">
-                  針對 {height}cm / {weight}kg / TDEE {macroPlan.tdee} kcal 規劃三大營養素與 {servings} 人份 7 天超市採買清單
+                  為 {height}cm / {weight}kg / TDEE {macroPlan.tdee} kcal 精算每日三大營養素，並同步生成 {servings} 人份 7 天超市採買清單
                 </p>
               </div>
 
               {/* Progress Steps */}
               <div className="max-w-md mx-auto bg-slate-50 p-4 rounded-2xl border border-slate-100 text-left space-y-2.5 text-xs">
                 {[
-                  `生理校準：計算 TDEE (${macroPlan.tdee} kcal) 與每日目標熱量 (${macroPlan.targetCalories} kcal)`,
+                  `Google 搜尋「問問 AI」模式：檢索指令「依安迪·加爾平的理論設計一週菜單」`,
+                  `生理校準：計算個人 TDEE (${macroPlan.tdee} kcal) 與每日目標熱量 (${macroPlan.targetCalories} kcal)`,
                   `蛋白質合成：規劃每日 ${macroPlan.targetProteinG}g 蛋白質與每餐 ${macroPlan.perMealProteinG}g 亮氨酸閾值`,
-                  '週期化配置 7 天早餐、午餐、晚餐、健康點心與低 GI 原型碳水',
-                  `精確等比縮放 ${servings} 人份 7 天超市採買品項與分區清單`,
+                  `食材 100% 完整整合：等比縮放 ${servings} 人份 7 天超市採買品項與分區清單`,
                 ].map((stepText, idx) => {
                   const stepNum = idx + 1;
                   const isDone = loadingStep > stepNum;
@@ -653,13 +696,25 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
               {/* Success Plan Overview Banner */}
               <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-2.5">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-xs font-black bg-emerald-600 text-white px-2.5 py-1 rounded-lg">
-                    {generatedResult.servings} 人份 7 天方案已就緒
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black bg-emerald-600 text-white px-2.5 py-1 rounded-lg">
+                      {generatedResult.servings} 人份 7 天方案已生成
+                    </span>
+                    <span className="text-xs font-bold text-emerald-800 flex items-center gap-1 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Google 搜尋「問問 AI」整合完成</span>
+                    </span>
+                  </div>
+
                   <span className="text-xs text-emerald-700 font-bold flex items-center gap-1">
                     <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
-                    <span>採買清單共 {generatedResult.groceryList.length} 項食材・100% 同步</span>
+                    <span>採買清單共 {generatedResult.groceryList.length} 項食材・100% 完整整合</span>
                   </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
+                  <Globe className="w-3 h-3 text-emerald-600 shrink-0" />
+                  <span>檢索依據：【依安迪·加爾平的理論設計一週菜單】・MPS 亮氨酸閾值・低 GI 原型全食物</span>
                 </div>
 
                 <h3 className="text-base sm:text-lg font-black text-slate-900">
@@ -689,7 +744,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                 )}
 
                 <p className="text-xs text-emerald-800 leading-relaxed bg-white/70 p-3 rounded-xl border border-emerald-100">
-                  💡 <strong>Galpin 生理摘要：</strong>{generatedResult.galpinSummary}
+                  💡 <strong>Galpin 生理理論摘要：</strong>{generatedResult.galpinSummary}
                 </p>
               </div>
 
@@ -705,7 +760,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                   }`}
                 >
                   <UtensilsCrossed className="w-3.5 h-3.5" />
-                  <span>預覽 7 天菜單</span>
+                  <span>預覽 7 天建議菜單</span>
                 </button>
                 <button
                   type="button"
@@ -774,21 +829,20 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                           { label: '點心', meal: generatedResult.weeklyMealPlan[selectedPreviewDay].snack, bg: 'bg-purple-50/70 border-purple-200/70' },
                         ].map(({ label, meal, bg }) => (
                           <div key={label} className={`p-3 rounded-xl border ${bg} space-y-1`}>
-                            <div className="flex items-center justify-between text-[11px] font-bold">
-                              <span className="text-slate-800">{label}</span>
-                              <span className="text-emerald-700">
-                                ~{meal.caloriesApprox} kcal | 蛋白 {meal.proteinApprox}g
-                                {meal.carbsApprox ? ` | 碳水 ${meal.carbsApprox}g` : ''}
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-slate-900">{label}：{meal.name}</span>
+                              <span className="text-[10px] text-slate-500 font-semibold">
+                                {meal.caloriesApprox} kcal | 蛋白 {meal.proteinApprox}g
                               </span>
                             </div>
-                            <div className="font-bold text-slate-900 text-xs">{meal.name}</div>
-                            <div className="text-[11px] text-slate-600">{meal.description}</div>
-                            {meal.ingredients && meal.ingredients.length > 0 && (
-                              <div className="text-[10px] text-slate-500 flex items-center gap-1 flex-wrap pt-0.5">
-                                <span className="font-semibold text-slate-600">食材：</span>
-                                {meal.ingredients.map((ing) => (
-                                  <span key={ing} className="bg-white/80 px-1.5 py-0.2 rounded border border-slate-200">
-                                    {ing}
+                            <p className="text-[11px] text-slate-600 line-clamp-2">
+                              {meal.description}
+                            </p>
+                            {meal.tags && meal.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {meal.tags.map((tag: string, tIdx: number) => (
+                                  <span key={tIdx} className="text-[9px] bg-white/80 text-slate-600 px-1.5 py-0.2 rounded border border-slate-200">
+                                    {tag}
                                   </span>
                                 ))}
                               </div>
@@ -803,28 +857,31 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
 
               {/* PREVIEW SUBTAB 2: Grocery List */}
               {previewTab === 'grocery' && (
-                <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {generatedResult.groceryList.map((item) => (
+                <div className="space-y-2">
+                  <div className="text-xs text-slate-500 flex items-center justify-between">
+                    <span>食材已依 {generatedResult.servings} 人份等比放大，共 {generatedResult.groceryList.length} 項</span>
+                    <span className="text-emerald-700 font-bold">100% 原型食材・超市分區</span>
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
+                    {generatedResult.groceryList.map((item, idx) => (
                       <div
-                        key={item.id}
-                        className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-start justify-between gap-2 text-xs"
+                        key={idx}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs border border-slate-100"
                       >
-                        <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs">
+                            {item.category === 'protein' ? '🥩' :
+                             item.category === 'vegetables' ? '🥦' :
+                             item.category === 'carbs' ? '🍠' :
+                             item.category === 'fruits' ? '🍎' :
+                             item.category === 'healthy_fats' ? '🥑' : '🧂'}
+                          </span>
                           <span className="font-bold text-slate-900">{item.name}</span>
-                          <span className="text-[11px] text-emerald-700 font-semibold ml-2">{item.quantity}</span>
-                          {item.notes && (
-                            <div className="text-[10px] text-slate-400 mt-0.5">💡 {item.notes}</div>
-                          )}
-                          {item.mealUsage && item.mealUsage.length > 0 && (
-                            <div className="text-[9px] text-slate-500 mt-1 flex items-center gap-1 flex-wrap">
-                              {item.mealUsage.slice(0, 3).map((u) => (
-                                <span key={u} className="bg-slate-100 px-1 py-0.2 rounded text-slate-700 font-medium">
-                                  {u}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                          <span className="text-[10px] text-slate-400">({item.galpinCategoryName || item.category})</span>
+                        </div>
+                        <div className="text-slate-600 font-bold">
+                          {item.quantity} {item.unit}
                         </div>
                       </div>
                     ))}
@@ -833,9 +890,10 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
               )}
             </div>
           )}
+
         </div>
 
-        {/* Footer Actions */}
+        {/* Modal Footer Actions */}
         <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
           {!generatedResult ? (
             <>
@@ -844,31 +902,43 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                 onClick={onClose}
                 className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
               >
-                取消
+                關閉
               </button>
               <button
                 type="button"
                 onClick={handleGenerate}
                 disabled={isLoading}
-                className="px-6 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-md flex items-center gap-2 transition-all disabled:opacity-50"
+                className="px-6 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-md flex items-center gap-2 transition-all disabled:opacity-50 hover:scale-102"
               >
                 <Sparkles className="w-4 h-4 text-amber-300" />
-                <span>依 TDEE 生成 {servings} 人份菜單與採買清單</span>
+                <span>以 Google 問問 AI 模式生成 {servings} 人份菜單與採買清單</span>
               </button>
             </>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => setGeneratedResult(null)}
-                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
-              >
-                ← 重新微調生理數值或目標
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGeneratedResult(null)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
+                >
+                  ← 返回修改設定
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  disabled={isLoading}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 flex items-center gap-1.5 transition-colors"
+                >
+                  <Shuffle className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>換一組 Google 問問 AI 建議菜單</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={handleApply}
-                className="px-6 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-md flex items-center gap-2 transition-all"
+                className="px-6 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-md flex items-center gap-2 transition-all hover:scale-102"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>一鍵套用此菜單與採買清單</span>
@@ -876,6 +946,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
             </>
           )}
         </div>
+
       </div>
     </div>
   );

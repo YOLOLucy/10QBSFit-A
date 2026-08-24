@@ -15,10 +15,13 @@ import {
   CalendarCheck,
   Users,
   Dna,
-  RotateCcw
+  RotateCcw,
+  Globe,
+  PlusCircle,
+  ExternalLink
 } from 'lucide-react';
 import { INITIAL_GROCERY_LIST, WEEKLY_MEAL_PLAN } from '../data/mealAndGroceryData';
-import { GroceryItem, DayMealPlan, UserProfile, DailyRecord } from '../types';
+import { GroceryItem, DayMealPlan, UserProfile, DailyRecord, WebRecipeSuggestion } from '../types';
 import { getTodayDateString, isWeekend } from '../utils/calculations';
 import { AiMealPlanModal, AiMealPlanResult } from './AiMealPlanModal';
 
@@ -78,6 +81,50 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
     return WEEKLY_MEAL_PLAN;
   });
 
+  // Helper to persist meal plan
+  const saveMealPlan = (newPlan: DayMealPlan[]) => {
+    setMealPlan(newPlan);
+    try {
+      localStorage.setItem(STORAGE_KEY_MEALPLAN, JSON.stringify(newPlan));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Insert a web-suggested recipe to a specific day and meal
+  const handleInsertRecipeToDay = (
+    recipe: WebRecipeSuggestion, 
+    dayOfWeek: string, 
+    mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack'
+  ) => {
+    const updatedPlan = mealPlan.map((dayPlan) => {
+      if (dayPlan.dayOfWeek === dayOfWeek) {
+        const mealObj = {
+          name: recipe.title,
+          description: `${recipe.galpinPrinciple} (${recipe.prepTimeMin ? `耗時約 ${recipe.prepTimeMin} 分鐘` : '原型料理'})`,
+          caloriesApprox: recipe.caloriesApprox,
+          proteinApprox: recipe.proteinApprox,
+          carbsApprox: recipe.carbsApprox || 0,
+          fatsApprox: recipe.fatsApprox || 0,
+          tags: recipe.tags || [recipe.goalTag, '#GoogleAI網路精選'],
+          ingredients: recipe.ingredients || [],
+        };
+        return {
+          ...dayPlan,
+          [mealType]: mealObj,
+        };
+      }
+      return dayPlan;
+    });
+
+    saveMealPlan(updatedPlan);
+    const targetIdx = updatedPlan.findIndex((d) => d.dayOfWeek === dayOfWeek);
+    if (targetIdx !== -1) {
+      setSelectedDayIdx(targetIdx);
+    }
+    setActiveSubTab('mealplan');
+  };
+
   // Load grocery list with local storage, default to synchronized INITIAL_GROCERY_LIST
   const [groceryList, setGroceryList] = useState<GroceryItem[]>(() => {
     try {
@@ -105,15 +152,6 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
     setGroceryList(newList);
     try {
       localStorage.setItem(STORAGE_KEY_GROCERY, JSON.stringify(newList));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const saveMealPlan = (newPlan: DayMealPlan[]) => {
-    setMealPlan(newPlan);
-    try {
-      localStorage.setItem(STORAGE_KEY_MEALPLAN, JSON.stringify(newPlan));
     } catch (e) {
       console.error(e);
     }
@@ -263,13 +301,13 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            {/* AI Custom Planner Button */}
+            {/* Primary AI Custom Planner Button */}
             <button
               onClick={() => setIsAiModalOpen(true)}
               className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-md flex items-center gap-1.5 transition-all hover:scale-105"
             >
               <Sparkles className="w-4 h-4 text-slate-950" />
-              <span>🤖 AI 客製 Galpin 菜單 (1-4人份)</span>
+              <span>🤖 Google 問問 AI：依加爾平理論設計菜單 (1-4人份)</span>
             </button>
 
             <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -280,7 +318,7 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
               {planMeta.isAiCustomized && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-200 bg-amber-950/40 px-2.5 py-1 rounded-lg border border-amber-500/30">
                   <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                  <span>AI 專屬方案</span>
+                  <span>Google 問問 AI 專屬方案</span>
                 </span>
               )}
             </div>
@@ -861,15 +899,10 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
         onApplyPlan={handleApplyAiPlan}
+        onInsertRecipeToDay={handleInsertRecipeToDay}
         currentServings={planMeta.servings || 2}
-        initialBiometrics={{
-          height: userProfile?.height || 172,
-          weight: latestRecord?.weight || userProfile?.weight || 68,
-          bodyFat: latestRecord?.bodyFat !== undefined ? latestRecord.bodyFat : (userProfile?.bodyFat || 18),
-          age: userProfile?.age || 32,
-          gender: userProfile?.gender || 'male',
-          activityLevel: userProfile?.activityLevel || 'moderate',
-        }}
+        profile={userProfile}
+        latestRecord={latestRecord}
       />
     </div>
   );

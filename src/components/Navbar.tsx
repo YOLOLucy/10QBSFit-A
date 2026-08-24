@@ -80,14 +80,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200/80 shadow-xs">
-      {/* Top Banner: Single-Payment 30 TWD Feature & Status */}
+      {/* Top Banner: Status & Info */}
       <div className="bg-slate-900 text-slate-100 px-4 py-1.5 text-xs">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="bg-emerald-500 text-slate-950 font-bold px-2 py-0.5 rounded text-[11px] tracking-wide">
-              {translate('nav.lifetimeBadge', currentLanguage, 'NT$ 30 單次下載')}
-            </span>
-            <span className="text-slate-300 hidden sm:inline">
+            <span className="text-slate-300">
               iOS / Android 手機極簡健康管家・多語言 AI 翻譯支援
             </span>
           </div>
