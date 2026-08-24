@@ -374,9 +374,16 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                       <span className="text-[10px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 rounded-md">
                         Google 搜尋・問問 AI
                       </span>
-                      <span className="text-xs font-black text-slate-900">
-                        檢索指令：【依安迪·加爾平的理論設計一週菜單】
-                      </span>
+                      <a
+                        href={`https://www.google.com/search?q=${encodeURIComponent('依安迪加爾平的理論設計一週菜單')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-black text-slate-900 hover:text-emerald-700 hover:underline inline-flex items-center gap-1 group"
+                        title="在 Google 搜尋中開啟此檢索指令"
+                      >
+                        <span>檢索指令：【依安迪·加爾平的理論設計一週菜單】</span>
+                        <ExternalLink className="w-3 h-3 text-emerald-600 opacity-70 group-hover:opacity-100" />
+                      </a>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-tight">
                       連網檢索加爾平食譜，同步菜單與採買清單。
@@ -758,9 +765,18 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
-                  <Globe className="w-3 h-3 text-emerald-600 shrink-0" />
-                  <span>檢索依據：【依安迪·加爾平的理論設計一週菜單】・MPS 亮氨酸閾值・低 GI 原型全食物</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <a
+                    href={`https://www.google.com/search?q=${encodeURIComponent('依安迪加爾平的理論設計一週菜單 MPS 亮氨酸閾值 低GI原型全食物')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[11px] text-emerald-700 hover:text-emerald-900 font-bold bg-white/90 hover:bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs transition-all group"
+                    title="在 Google 搜尋中開啟檢索頁面"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>檢索依據：【依安迪·加爾平的理論設計一週菜單】・MPS 亮氨酸閾值・低 GI 原型全食物</span>
+                    <ExternalLink className="w-3 h-3 text-emerald-500 opacity-70 group-hover:opacity-100" />
+                  </a>
                 </div>
 
                 <h3 className="text-base sm:text-lg font-black text-slate-900">
