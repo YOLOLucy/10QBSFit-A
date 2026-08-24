@@ -547,9 +547,9 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                     {item.mealUsage && item.mealUsage.length > 0 && (
                       <div className="flex items-center gap-1 flex-wrap mt-1.5">
                         <span className="text-[9px] text-slate-400 font-medium">用於：</span>
-                        {item.mealUsage.map((usage) => (
+                        {item.mealUsage.map((usage, uIdx) => (
                           <span 
-                            key={usage} 
+                            key={`${item.id}-usage-${usage}-${uIdx}`} 
                             className="text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded-md"
                           >
                             {usage}
@@ -696,8 +696,8 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                       <span>採買清單對應食材：</span>
                     </div>
                     <div className="flex items-center gap-1 flex-wrap">
-                      {currentMealPlan.breakfast.ingredients.map((ing) => (
-                        <span key={ing} className="text-[10px] font-medium bg-white text-amber-900 px-1.5 py-0.5 rounded border border-amber-200 shadow-2xs">
+                      {currentMealPlan.breakfast.ingredients.map((ing, iIdx) => (
+                        <span key={`bf-ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-amber-900 px-1.5 py-0.5 rounded border border-amber-200 shadow-2xs">
                           {ing}
                         </span>
                       ))}
@@ -706,8 +706,8 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 )}
 
                 <div className="flex items-center gap-1 flex-wrap pt-1">
-                  {currentMealPlan.breakfast.tags.map((t) => (
-                    <span key={t} className="text-[10px] font-semibold bg-amber-100/60 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200/60">
+                  {currentMealPlan.breakfast.tags.map((t, tIdx) => (
+                    <span key={`bf-tag-${t}-${tIdx}`} className="text-[10px] font-semibold bg-amber-100/60 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200/60">
                       #{t}
                     </span>
                   ))}
@@ -736,8 +736,8 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                       <span>採買清單對應食材：</span>
                     </div>
                     <div className="flex items-center gap-1 flex-wrap">
-                      {currentMealPlan.lunch.ingredients.map((ing) => (
-                        <span key={ing} className="text-[10px] font-medium bg-white text-emerald-900 px-1.5 py-0.5 rounded border border-emerald-200 shadow-2xs">
+                      {currentMealPlan.lunch.ingredients.map((ing, iIdx) => (
+                        <span key={`lu-ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-emerald-900 px-1.5 py-0.5 rounded border border-emerald-200 shadow-2xs">
                           {ing}
                         </span>
                       ))}
@@ -746,8 +746,8 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 )}
 
                 <div className="flex items-center gap-1 flex-wrap pt-1">
-                  {currentMealPlan.lunch.tags.map((t) => (
-                    <span key={t} className="text-[10px] font-semibold bg-emerald-100/60 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200/60">
+                  {currentMealPlan.lunch.tags.map((t, tIdx) => (
+                    <span key={`lu-tag-${t}-${tIdx}`} className="text-[10px] font-semibold bg-emerald-100/60 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200/60">
                       #{t}
                     </span>
                   ))}
@@ -776,8 +776,8 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                       <span>採買清單對應食材：</span>
                     </div>
                     <div className="flex items-center gap-1 flex-wrap">
-                      {currentMealPlan.dinner.ingredients.map((ing) => (
-                        <span key={ing} className="text-[10px] font-medium bg-white text-teal-900 px-1.5 py-0.5 rounded border border-teal-200 shadow-2xs">
+                      {currentMealPlan.dinner.ingredients.map((ing, iIdx) => (
+                        <span key={`di-ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-teal-900 px-1.5 py-0.5 rounded border border-teal-200 shadow-2xs">
                           {ing}
                         </span>
                       ))}
@@ -786,8 +786,8 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 )}
 
                 <div className="flex items-center gap-1 flex-wrap pt-1">
-                  {currentMealPlan.dinner.tags.map((t) => (
-                    <span key={t} className="text-[10px] font-semibold bg-teal-100/60 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
+                  {currentMealPlan.dinner.tags.map((t, tIdx) => (
+                    <span key={`di-tag-${t}-${tIdx}`} className="text-[10px] font-semibold bg-teal-100/60 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
                       #{t}
                     </span>
                   ))}
@@ -816,8 +816,8 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                       <span>採買清單對應食材：</span>
                     </div>
                     <div className="flex items-center gap-1 flex-wrap">
-                      {currentMealPlan.snack.ingredients.map((ing) => (
-                        <span key={ing} className="text-[10px] font-medium bg-white text-purple-900 px-1.5 py-0.5 rounded border border-purple-200 shadow-2xs">
+                      {currentMealPlan.snack.ingredients.map((ing, iIdx) => (
+                        <span key={`sn-ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-purple-900 px-1.5 py-0.5 rounded border border-purple-200 shadow-2xs">
                           {ing}
                         </span>
                       ))}
@@ -826,8 +826,8 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 )}
 
                 <div className="flex items-center gap-1 flex-wrap pt-1">
-                  {currentMealPlan.snack.tags.map((t) => (
-                    <span key={t} className="text-[10px] font-semibold bg-purple-100/60 text-purple-800 px-2 py-0.5 rounded-md border border-purple-200/60">
+                  {currentMealPlan.snack.tags.map((t, tIdx) => (
+                    <span key={`sn-tag-${t}-${tIdx}`} className="text-[10px] font-semibold bg-purple-100/60 text-purple-800 px-2 py-0.5 rounded-md border border-purple-200/60">
                       #{t}
                     </span>
                   ))}

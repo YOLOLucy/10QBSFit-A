@@ -924,7 +924,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                   <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
                     {generatedResult.groceryList.map((item, idx) => (
                       <div
-                        key={idx}
+                        key={item.id || `preview_g_${idx}_${item.name}`}
                         className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs border border-slate-100"
                       >
                         <div className="flex items-center gap-2">

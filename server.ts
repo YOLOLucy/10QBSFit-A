@@ -34,8 +34,8 @@ async function generateWithModelFallback(
     temperature?: number;
   }
 ) {
-  // Use valid supported models: gemini-2.5-flash, gemini-3.7-flash, gemini-3.1-flash-lite (gemini-2.5-pro was retired)
-  const models = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite"];
+  // Use valid supported models: gemini-2.5-flash, gemini-3.7-flash, gemini-3.1-flash-lite, gemini-2.0-flash
+  const models = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-2.0-flash"];
   let lastError: any = null;
 
   for (const model of models) {
@@ -96,9 +96,14 @@ async function generateWithModelFallback(
         const status = err?.status || err?.code;
         console.warn(`[Gemini API Warning] Model ${model} attempt ${attempt + 1} failed:`, errMsg);
 
-        // If it's a temporary 503 high demand or 429 rate limit, wait slightly and retry or switch model
+        // If quota is exhausted (429 / RESOURCE_EXHAUSTED), switch to the next model immediately
+        if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Quota exceeded") || errMsg.includes("quota")) {
+          break;
+        }
+
+        // If it's a temporary 503 high demand or transient rate limit, wait slightly and retry
         if (errMsg.includes("503") || errMsg.includes("demand") || errMsg.includes("429") || status === 503 || status === 429) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+          await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
           continue;
         } else {
           // For other errors, switch to next model immediately
