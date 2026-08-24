@@ -74,6 +74,41 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [isTestingNotification, setIsTestingNotification] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
+  // Helper for numeric-only inputs with arrow key suppression
+  const handleNumericKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, allowDecimal = true) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      return;
+    }
+    if (['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      return;
+    }
+    if (allowDecimal && e.key === '.') {
+      if (e.currentTarget.value.includes('.')) {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (!/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+    }
+  };
+
+  const sanitizeNumber = (val: string, allowDecimal = true) => {
+    if (allowDecimal) {
+      val = val.replace(/[^0-9.]/g, '');
+      const parts = val.split('.');
+      if (parts.length > 2) {
+        val = parts[0] + '.' + parts.slice(1).join('');
+      }
+      return val;
+    }
+    return val.replace(/[^0-9]/g, '');
+  };
+
   if (!isOpen) return null;
 
   const currentBMI = calculateBMI(formData.height, formData.weight);
@@ -399,11 +434,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   <label className="font-bold text-slate-700 block mb-1">身高 (cm) *</label>
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.5"
+                      type="text"
+                      inputMode="decimal"
                       required
                       value={formData.height || ''}
-                      onChange={(e) => setFormData({ ...formData, height: parseFloat(e.target.value) || 0 })}
+                      onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                      onChange={(e) => {
+                        const val = sanitizeNumber(e.target.value, true);
+                        setFormData({ ...formData, height: parseFloat(val) || 0 });
+                      }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-semibold"
                     />
                     <span className="text-slate-400 absolute right-2.5 top-2">cm</span>
@@ -424,11 +463,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   </div>
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.1"
+                      type="text"
+                      inputMode="decimal"
                       required
                       value={formData.weight || ''}
-                      onChange={(e) => setFormData({ ...formData, weight: parseFloat(e.target.value) || 0 })}
+                      onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                      onChange={(e) => {
+                        const val = sanitizeNumber(e.target.value, true);
+                        setFormData({ ...formData, weight: parseFloat(val) || 0 });
+                      }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-semibold"
                     />
                     <span className="text-slate-400 absolute right-2.5 top-2">kg</span>
@@ -440,11 +483,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   <label className="font-bold text-slate-700 block mb-1">目標體重 (kg)</label>
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.1"
+                      type="text"
+                      inputMode="decimal"
                       placeholder={`建議 ${idealRange.mid}`}
-                      value={formData.targetWeight || ''}
-                      onChange={(e) => setFormData({ ...formData, targetWeight: parseFloat(e.target.value) || undefined })}
+                      value={formData.targetWeight !== undefined ? formData.targetWeight : ''}
+                      onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                      onChange={(e) => {
+                        const val = sanitizeNumber(e.target.value, true);
+                        setFormData({ ...formData, targetWeight: val === '' ? undefined : (parseFloat(val) || undefined) });
+                      }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-semibold"
                     />
                     <span className="text-slate-400 absolute right-2.5 top-2">kg</span>
@@ -461,11 +508,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   </div>
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.1"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="例如：21.5（選填）"
-                      value={formData.bodyFat || ''}
-                      onChange={(e) => setFormData({ ...formData, bodyFat: parseFloat(e.target.value) || undefined })}
+                      value={formData.bodyFat !== undefined ? formData.bodyFat : ''}
+                      onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                      onChange={(e) => {
+                        const val = sanitizeNumber(e.target.value, true);
+                        setFormData({ ...formData, bodyFat: val === '' ? undefined : (parseFloat(val) || undefined) });
+                      }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                     />
                     <span className="text-slate-400 absolute right-2.5 top-2">%</span>
@@ -476,9 +527,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">年齡 (歲)</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     value={formData.age || ''}
-                    onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value, 10) || 25 })}
+                    onKeyDown={(e) => handleNumericKeyDown(e, false)}
+                    onChange={(e) => {
+                      const val = sanitizeNumber(e.target.value, false);
+                      setFormData({ ...formData, age: val === '' ? undefined : (parseInt(val, 10) || undefined) });
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                   />
                 </div>

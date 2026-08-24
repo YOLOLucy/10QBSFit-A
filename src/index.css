@@ -1,1 +1,13 @@
 @import "tailwindcss";
+
+/* 隱藏所有數字輸入框上下箭頭 (Cancel spin buttons / arrows) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

@@ -72,6 +72,41 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
   const [isQuickSyncing, setIsQuickSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
+  // Helper for numeric-only inputs with arrow key suppression
+  const handleNumericKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, allowDecimal = true) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      return;
+    }
+    if (['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      return;
+    }
+    if (allowDecimal && e.key === '.') {
+      if (e.currentTarget.value.includes('.')) {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (!/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+    }
+  };
+
+  const sanitizeNumber = (val: string, allowDecimal = true) => {
+    if (allowDecimal) {
+      val = val.replace(/[^0-9.]/g, '');
+      const parts = val.split('.');
+      if (parts.length > 2) {
+        val = parts[0] + '.' + parts.slice(1).join('');
+      }
+      return val;
+    }
+    return val.replace(/[^0-9]/g, '');
+  };
+
   const isCompleted = Boolean(existingRecord?.completed);
   const currentQuestion = questions[currentIndex] || questions[0];
   const totalQuestions = questions.length; // 10
@@ -444,10 +479,14 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
                     </button>
                     <div className="relative">
                       <input
-                        type="number"
-                        step="0.1"
-                        value={todayWeight}
-                        onChange={(e) => setTodayWeight(parseFloat(e.target.value) || 0)}
+                        type="text"
+                        inputMode="decimal"
+                        value={todayWeight || ''}
+                        onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                        onChange={(e) => {
+                          const val = sanitizeNumber(e.target.value, true);
+                          setTodayWeight(val === '' ? 0 : parseFloat(val) || 0);
+                        }}
                         className="w-24 text-center text-xl font-black text-slate-900 bg-white border border-purple-200 rounded-xl py-1 focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                       />
                       <span className="text-[10px] font-bold text-slate-400 absolute right-1.5 bottom-1.5">kg</span>

@@ -105,18 +105,18 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   const [randomizeWebInspiration, setRandomizeWebInspiration] = useState<boolean>(true);
 
   // User physiological biometrics
-  const [height, setHeight] = useState<number>(baseProfile.height || 172);
-  const [weight, setWeight] = useState<number>(
-    latestRecord?.weight || baseProfile.weight || 68.5
+  const [heightStr, setHeightStr] = useState<string>(String(baseProfile.height || 172));
+  const [weightStr, setWeightStr] = useState<string>(
+    String(latestRecord?.weight || baseProfile.weight || 68.5)
   );
-  const [bodyFat, setBodyFat] = useState<number | undefined>(
+  const [bodyFatStr, setBodyFatStr] = useState<string>(
     latestRecord?.bodyFat !== undefined 
-      ? latestRecord.bodyFat 
+      ? String(latestRecord.bodyFat) 
       : baseProfile.bodyFat !== undefined 
-        ? baseProfile.bodyFat 
-        : 22
+        ? String(baseProfile.bodyFat) 
+        : '22'
   );
-  const [age, setAge] = useState<number>(baseProfile.age || 29);
+  const [ageStr, setAgeStr] = useState<string>(String(baseProfile.age || 29));
   const [gender, setGender] = useState<'male' | 'female' | 'other'>(baseProfile.gender || 'female');
   const [activityLevel, setActivityLevel] = useState<UserProfile['activityLevel']>(
     baseProfile.activityLevel || 'light'
@@ -131,17 +131,62 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   const [previewTab, setPreviewTab] = useState<'plan' | 'grocery'>('plan');
   const [selectedPreviewDay, setSelectedPreviewDay] = useState<number>(0);
 
+  // Helper for numeric-only inputs with arrow key suppression
+  const handleNumericKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, allowDecimal = true) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      return;
+    }
+    if (['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      return;
+    }
+    if (allowDecimal && e.key === '.') {
+      if (e.currentTarget.value.includes('.')) {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (!/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+    }
+  };
+
+  const handleNumericChange = (setter: React.Dispatch<React.SetStateAction<string>>, allowDecimal = true) => {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      let val = e.target.value;
+      if (allowDecimal) {
+        val = val.replace(/[^0-9.]/g, '');
+        const parts = val.split('.');
+        if (parts.length > 2) {
+          val = parts[0] + '.' + parts.slice(1).join('');
+        }
+      } else {
+        val = val.replace(/[^0-9]/g, '');
+      }
+      setter(val);
+    };
+  };
+
+  // Derived numeric values
+  const height = parseFloat(heightStr) || baseProfile.height || 172;
+  const weight = parseFloat(weightStr) || latestRecord?.weight || baseProfile.weight || 68.5;
+  const bodyFat = bodyFatStr.trim() === '' ? undefined : (parseFloat(bodyFatStr) || undefined);
+  const age = parseInt(ageStr, 10) || baseProfile.age || 29;
+
   // Sync when modal opens
   useEffect(() => {
     if (isOpen) {
-      if (baseProfile.height) setHeight(baseProfile.height);
-      if (latestRecord?.weight) setWeight(latestRecord.weight);
-      else if (baseProfile.weight) setWeight(baseProfile.weight);
+      if (baseProfile.height) setHeightStr(String(baseProfile.height));
+      if (latestRecord?.weight) setWeightStr(String(latestRecord.weight));
+      else if (baseProfile.weight) setWeightStr(String(baseProfile.weight));
 
-      if (latestRecord?.bodyFat !== undefined) setBodyFat(latestRecord.bodyFat);
-      else if (baseProfile.bodyFat !== undefined) setBodyFat(baseProfile.bodyFat);
+      if (latestRecord?.bodyFat !== undefined) setBodyFatStr(String(latestRecord.bodyFat));
+      else if (baseProfile.bodyFat !== undefined) setBodyFatStr(String(baseProfile.bodyFat));
 
-      if (baseProfile.age) setAge(baseProfile.age);
+      if (baseProfile.age) setAgeStr(String(baseProfile.age));
       if (baseProfile.gender) setGender(baseProfile.gender);
       if (baseProfile.activityLevel) setActivityLevel(baseProfile.activityLevel);
     }
@@ -285,10 +330,10 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-              Google 問問 AI：依安迪·加爾平理論設計一週菜單與採買清單
+              Google 問問 AI 菜單設計
             </h2>
             <p className="text-xs text-emerald-100/90 leading-relaxed">
-              啟動 <strong>Google 搜尋「問問 AI」深度模式</strong>，直接以「依安迪·加爾平的理論設計一週菜單」連網檢索全球運動生理食譜，並依個人 TDEE 與三大營養素目標，精算 1-4 人份 7 天菜單與 100% 同步的超市採買清單。
+              連網檢索加爾平食譜，精算一週菜單與採買清單。
             </p>
           </div>
 
@@ -319,12 +364,12 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
             <div className="space-y-6">
               
               {/* Google Ask AI Mode Query Banner */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border-2 border-emerald-300/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="p-2.5 rounded-2xl bg-emerald-700 text-white shadow-sm shrink-0 mt-0.5">
-                    <Globe className="w-5 h-5 animate-pulse text-emerald-200" />
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border-2 border-emerald-300/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-700 text-white shadow-sm shrink-0">
+                    <Globe className="w-4 h-4 animate-pulse text-emerald-200" />
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 rounded-md">
                         Google 搜尋・問問 AI
@@ -333,8 +378,8 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                         檢索指令：【依安迪·加爾平的理論設計一週菜單】
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-relaxed">
-                      已啟用 Google 搜尋問問 AI 模式，系統將自動從網路檢索 Dr. Andy Galpin 運動生理、MPS 亮氨酸閾值高蛋白原型食譜，並 100% 完整整合進一週 7 天菜單與超市採買清單中。
+                    <p className="text-[11px] text-slate-600 leading-tight">
+                      連網檢索加爾平食譜，同步菜單與採買清單。
                     </p>
                   </div>
                 </div>
@@ -392,9 +437,11 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
-                          value={height}
-                          onChange={(e) => setHeight(Math.max(Number(e.target.value) || 0, 100))}
+                          type="text"
+                          inputMode="decimal"
+                          value={heightStr}
+                          onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                          onChange={handleNumericChange(setHeightStr, true)}
                           className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-900 pr-8 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                           placeholder="172"
                         />
@@ -408,10 +455,11 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
-                          step="0.1"
-                          value={weight}
-                          onChange={(e) => setWeight(Math.max(Number(e.target.value) || 0, 30))}
+                          type="text"
+                          inputMode="decimal"
+                          value={weightStr}
+                          onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                          onChange={handleNumericChange(setWeightStr, true)}
                           className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-900 pr-8 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                           placeholder="68.5"
                         />
@@ -425,13 +473,11 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
-                          step="0.1"
-                          value={bodyFat !== undefined ? bodyFat : ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setBodyFat(val === '' ? undefined : Number(val));
-                          }}
+                          type="text"
+                          inputMode="decimal"
+                          value={bodyFatStr}
+                          onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                          onChange={handleNumericChange(setBodyFatStr, true)}
                           className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-900 pr-7 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                           placeholder="22.0"
                         />
@@ -742,10 +788,6 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                     </div>
                   </div>
                 )}
-
-                <p className="text-xs text-emerald-800 leading-relaxed bg-white/70 p-3 rounded-xl border border-emerald-100">
-                  💡 <strong>Galpin 生理理論摘要：</strong>{generatedResult.galpinSummary}
-                </p>
               </div>
 
               {/* Preview Mode Switcher */}
