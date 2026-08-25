@@ -1,1 +1,4 @@
-/*    /index.html   200
+/api/health                                /.netlify/functions/health                     200
+/api/gemini/generate-meal-and-grocery      /.netlify/functions/generate-meal-and-grocery  200
+/*                                         /index.html                                    200
+
