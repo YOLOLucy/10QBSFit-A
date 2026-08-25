@@ -193,3 +193,24 @@ export interface UserBiometricsInput {
   targetCarbsG: number;
   targetFatsG: number;
 }
+
+export interface SystemLogEntry {
+  id: string;
+  timestamp: string;
+  localTime: string;
+  level: 'info' | 'warn' | 'error' | 'success';
+  module: 'meal_plan' | 'google_ai' | 'grocery' | 'auth' | 'system' | 'netlify_deploy';
+  action: string;
+  environment: {
+    host: string;
+    protocol: string;
+    isNetlify: boolean;
+    isAiStudio: boolean;
+    isLocalhost: boolean;
+    userAgent: string;
+    online: boolean;
+  };
+  details?: Record<string, any>;
+  message: string;
+  errorStack?: string;
+}

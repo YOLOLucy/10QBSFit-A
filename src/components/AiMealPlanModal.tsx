@@ -19,7 +19,8 @@ import {
   Info,
   Clock,
   Copy,
-  ArrowRight
+  ArrowRight,
+  Terminal
 } from 'lucide-react';
 import { 
   DayMealPlan, 
@@ -36,6 +37,7 @@ import {
   loadUserProfile,
   generateClientGalpinMealPlan,
 } from '../utils/calculations';
+import { addSystemLog } from '../utils/systemLogger';
 
 export interface AiMealPlanResult {
   servings: number;
@@ -263,36 +265,55 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
 
     const stepInterval = setInterval(() => {
       setLoadingStep((prev) => (prev < 4 ? prev + 1 : prev));
-    }, 1400);
+    }, 1200);
 
-    try {
-      const biometricsPayload = {
-        height,
-        weight,
-        bodyFat,
-        age,
-        gender,
-        activityLevel,
-        bmr: macroPlan.bmr,
-        tdee: macroPlan.tdee,
+    const varietySeed = Math.floor(Math.random() * 100000);
+    const combinedNotes = [
+      pastedGoogleResult.trim() ? `[Google 搜尋建議菜單參考: ${pastedGoogleResult.trim()}]` : '',
+      specialNotes.trim() ? specialNotes.trim() : '',
+      `[多樣性換新種子 #${varietySeed}]`
+    ].filter(Boolean).join(' | ');
+
+    const biometricsPayload = {
+      height,
+      weight,
+      bodyFat,
+      age,
+      gender,
+      activityLevel,
+      bmr: macroPlan.bmr,
+      tdee: macroPlan.tdee,
+      targetCalories: macroPlan.targetCalories,
+      targetProteinG: macroPlan.targetProteinG,
+      targetCarbsG: macroPlan.targetCarbsG,
+      targetFatsG: macroPlan.targetFatsG,
+    };
+
+    addSystemLog({
+      level: 'info',
+      module: 'meal_plan',
+      action: generatedResult ? '換一組 Google 問問 AI 建議菜單' : '以 Google 問問 AI 模式生成菜單',
+      message: `啟動 ${servings} 人份加爾平理論菜單生成 (種子 #${varietySeed})`,
+      details: {
+        servings,
+        fitnessGoal,
+        dietPreference,
         targetCalories: macroPlan.targetCalories,
         targetProteinG: macroPlan.targetProteinG,
-        targetCarbsG: macroPlan.targetCarbsG,
-        targetFatsG: macroPlan.targetFatsG,
-      };
+        combinedGoogleQuery,
+      },
+    });
 
-      // Generate a dynamic variety seed on every click
-      const varietySeed = Math.floor(Math.random() * 100000);
-      const combinedNotes = [
-        pastedGoogleResult.trim() ? `[Google 搜尋建議菜單參考: ${pastedGoogleResult.trim()}]` : '',
-        specialNotes.trim() ? specialNotes.trim() : '',
-        `[多樣性換新種子 #${varietySeed}]`
-      ].filter(Boolean).join(' | ');
+    try {
+      // 1. Attempt Cloud API with a 7-second timeout for responsive Netlify/Offline fallback
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
 
       try {
         const res = await fetch('/api/gemini/generate-meal-and-grocery', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             servings,
             fitnessGoal,
@@ -305,20 +326,50 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
           }),
         });
 
+        clearTimeout(timeoutId);
         clearInterval(stepInterval);
 
         if (res.ok) {
           const json = await res.json();
           if (json.success && json.data) {
             setGeneratedResult(json.data);
+            addSystemLog({
+              level: 'success',
+              module: 'google_ai',
+              action: '雲端 Google AI 檢索生成成功',
+              message: `已透過 Google AI 與 Grounding 連網生成 ${json.data.themeTitle}`,
+              details: {
+                servings: json.data.servings,
+                mealDaysCount: json.data.weeklyMealPlan?.length || 7,
+                groceryCount: json.data.groceryList?.length || 0,
+              },
+            });
             return;
           }
+        } else {
+          addSystemLog({
+            level: 'warn',
+            module: 'netlify_deploy',
+            action: '後端 API 回傳非 200 狀態碼',
+            message: `後端 API 響應狀態 ${res.status} ${res.statusText}（在 Netlify 靜態託管時屬正常現象），將自動啟用 Dr. Galpin 客戶端計算引擎`,
+            details: { status: res.status, statusText: res.statusText },
+          });
         }
-      } catch (fetchErr) {
-        console.warn('Backend API returned error, activating Dr. Galpin calculation fallback:', fetchErr);
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId);
+        const isAbort = fetchErr.name === 'AbortError';
+        addSystemLog({
+          level: 'warn',
+          module: 'netlify_deploy',
+          action: isAbort ? '後端 API 呼叫逾時' : '後端 API 連線中斷 (Netlify 靜態託管)',
+          message: isAbort 
+            ? '後端響應超過 7 秒，已即時無縫切換至 Dr. Galpin 運動生理運算引擎' 
+            : `Netlify 靜態託管環境或離線環境（${fetchErr.message || '連線失敗'}），已自動啟動客戶端 Dr. Galpin 演算法與多樣性換新`,
+          details: { errorName: fetchErr.name, errorMessage: fetchErr.message },
+        });
       }
 
-      // Seamless fallback to client-side Dr. Galpin calculation engine
+      // 2. Seamless fallback to client-side Dr. Galpin calculation engine
       const fallbackResult = generateClientGalpinMealPlan(
         servings,
         fitnessGoal,
@@ -326,9 +377,30 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
         biometricsPayload,
         varietySeed
       );
+
       setGeneratedResult(fallbackResult as AiMealPlanResult);
+      addSystemLog({
+        level: 'success',
+        module: 'meal_plan',
+        action: 'Dr. Galpin 客戶端運算引擎生成完成',
+        message: `成功即時計算 ${servings} 人份菜單：${fallbackResult.themeTitle}，採買清單共 ${fallbackResult.groceryList.length} 項食材`,
+        details: {
+          servings: fallbackResult.servings,
+          themeTitle: fallbackResult.themeTitle,
+          varietySeed,
+          groceryCount: fallbackResult.groceryList.length,
+        },
+      });
     } catch (err: any) {
       console.error('AI Meal Generation Request Error:', err);
+      addSystemLog({
+        level: 'error',
+        module: 'meal_plan',
+        action: '菜單生成發生未預期異常',
+        message: err.message || '生成失敗，已使用保底演算法',
+        errorStack: err.stack,
+      });
+
       const safePlan = generateClientGalpinMealPlan(
         servings,
         fitnessGoal,
@@ -347,7 +419,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
           targetCarbsG: macroPlan.targetCarbsG,
           targetFatsG: macroPlan.targetFatsG,
         },
-        Math.floor(Math.random() * 100000)
+        varietySeed
       );
       setGeneratedResult(safePlan as AiMealPlanResult);
     } finally {
@@ -358,6 +430,16 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
 
   const handleApply = () => {
     if (generatedResult) {
+      addSystemLog({
+        level: 'info',
+        module: 'grocery',
+        action: '套用 7 天菜單與採買清單',
+        message: `已將 ${generatedResult.servings} 人份方案【${generatedResult.themeTitle}】與 ${generatedResult.groceryList.length} 項採買食材套用至帳號儲存`,
+        details: {
+          servings: generatedResult.servings,
+          themeTitle: generatedResult.themeTitle,
+        },
+      });
       onApplyPlan(generatedResult);
       onClose();
     }

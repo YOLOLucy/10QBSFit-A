@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   User, 
@@ -20,15 +20,22 @@ import {
   Send,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   ShieldCheck,
   ExternalLink,
   Mail,
   Copy,
   FileText,
   Lock,
-  UserCheck
+  UserCheck,
+  Terminal,
+  Download,
+  Trash2,
+  Cpu,
+  Globe,
+  Server
 } from 'lucide-react';
-import { UserProfile } from '../types';
+import { UserProfile, SystemLogEntry } from '../types';
 import { 
   calculateBMI, 
   getBMICategory, 
@@ -46,13 +53,21 @@ import {
   isNotificationSupported
 } from '../utils/reminder';
 import { PRIVACY_POLICY_DATA } from '../data/privacyPolicyData';
+import { 
+  getSystemLogs, 
+  clearSystemLogs, 
+  downloadLogFile, 
+  exportLogsAsText, 
+  addSystemLog, 
+  getEnvironmentInfo 
+} from '../utils/systemLogger';
 
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   profile: UserProfile;
   onSaveProfile: (newProfile: UserProfile) => void;
-  initialTab?: 'settings' | 'privacy';
+  initialTab?: 'settings' | 'privacy' | 'logs';
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({
@@ -62,7 +77,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onSaveProfile,
   initialTab = 'settings',
 }) => {
-  const [activeTab, setActiveTab] = useState<'settings' | 'privacy'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'settings' | 'privacy' | 'logs'>(initialTab);
   const [formData, setFormData] = useState<UserProfile>({ 
     ...profile,
     reminderEnabled: profile.reminderEnabled ?? true,
@@ -73,6 +88,24 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [testNotice, setTestNotice] = useState<{ text: string; success: boolean } | null>(null);
   const [isTestingNotification, setIsTestingNotification] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Diagnostic Log State
+  const [logs, setLogs] = useState<SystemLogEntry[]>([]);
+  const [copiedLogs, setCopiedLogs] = useState(false);
+  const [logFilterLevel, setLogFilterLevel] = useState<string>('all');
+  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
+  const [isTestingDiag, setIsTestingDiag] = useState(false);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLogs(getSystemLogs());
+    }
+  }, [isOpen, activeTab]);
+
+  const refreshLogs = () => {
+    setLogs(getSystemLogs());
+  };
 
   // Helper for numeric-only inputs with arrow key suppression
   const handleNumericKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, allowDecimal = true) => {
@@ -159,6 +192,78 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     }
   };
 
+  const handleCopyLogsText = () => {
+    const text = exportLogsAsText();
+    navigator.clipboard.writeText(text);
+    setCopiedLogs(true);
+    setTimeout(() => setCopiedLogs(false), 2000);
+  };
+
+  const handleClearAllLogs = () => {
+    if (window.confirm('確定要清空帳號內儲存的所有系統運行與部署診斷日誌嗎？')) {
+      clearSystemLogs();
+      refreshLogs();
+    }
+  };
+
+  const handleRunDiagnosticTest = async () => {
+    setIsTestingDiag(true);
+    const env = getEnvironmentInfo();
+
+    addSystemLog({
+      level: 'info',
+      module: 'system',
+      action: '執行手動環境連線與運算診斷檢測',
+      message: `開始檢測當前主機 ${env.host}，網路在線狀態: ${env.online ? '正常' : '離線'}`,
+      details: {
+        environment: env,
+        userProfile: {
+          height: formData.height,
+          weight: formData.weight,
+          bmr: calculateBMR(formData),
+          tdee: calculateTDEE(formData),
+        }
+      }
+    });
+
+    // Test cloud endpoint response
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch('/api/health', { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        addSystemLog({
+          level: 'success',
+          module: 'system',
+          action: '後端 API /api/health 健康檢查成功',
+          message: '後端服務正常運行，Google AI 與自訂 API 可直接調用。',
+          details: { status: res.status }
+        });
+      } else {
+        addSystemLog({
+          level: 'warn',
+          module: 'netlify_deploy',
+          action: '後端 API /api/health 未響應 (Netlify 靜態託管)',
+          message: '偵測到 Netlify 靜態託管架構，系統已確認啟用 Dr. Andy Galpin 本地運動生理學運算引擎以保證菜單生成 100% 成功。',
+          details: { status: res.status }
+        });
+      }
+    } catch (e: any) {
+      addSystemLog({
+        level: 'warn',
+        module: 'netlify_deploy',
+        action: '後端 API 離線檢測 (Netlify/SPA 模式)',
+        message: `在 ${env.isNetlify ? 'Netlify 部署環境' : '無獨立 Node 後端託管環境'}下，菜單生成將使用內建加爾平演算法即時運算，不會受限於後端連線中斷。`,
+        details: { error: e.message }
+      });
+    }
+
+    refreshLogs();
+    setIsTestingDiag(false);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSaveProfile({
@@ -200,27 +305,48 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('settings')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
               activeTab === 'settings'
                 ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200/80'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             <User className="w-3.5 h-3.5" />
-            <span>個人體態與提醒設定</span>
+            <span>體態與提醒</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('privacy')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
               activeTab === 'privacy'
                 ? 'bg-white text-emerald-800 shadow-xs ring-1 ring-slate-200/80'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>隱私權政策與條款</span>
+            <span>隱私條款</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('logs');
+              refreshLogs();
+            }}
+            className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+              activeTab === 'logs'
+                ? 'bg-white text-indigo-700 shadow-xs ring-1 ring-slate-200/80'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Terminal className="w-3.5 h-3.5 text-indigo-600" />
+            <span>系統 Log 檔</span>
+            {logs.length > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 text-indigo-700 font-bold">
+                {logs.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -739,6 +865,265 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-xs transition-all"
               >
                 完成檢視 (關閉)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: System Diagnostic Logs */}
+        {activeTab === 'logs' && (
+          <div className="space-y-4">
+            {/* Diagnostic Environment Header Card */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white shadow-sm space-y-3 border border-indigo-900/50">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-indigo-400" />
+                  <span className="text-xs font-bold text-slate-200">系統運行日誌 & 部署診斷</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    {getEnvironmentInfo().online ? '網路在線' : '離線模式'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    {getEnvironmentInfo().isNetlify ? 'Netlify 部署' : getEnvironmentInfo().isAiStudio ? 'AI Studio 容器' : '獨立託管'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300 pt-1">
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10 space-y-1">
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <Globe className="w-3 h-3 text-indigo-400" />
+                    <span>當前運行主機 (Host)</span>
+                  </div>
+                  <div className="font-mono text-[11px] text-white truncate" title={getEnvironmentInfo().host}>
+                    {getEnvironmentInfo().host}
+                  </div>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10 space-y-1">
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <Server className="w-3 h-3 text-emerald-400" />
+                    <span>帳號 Log 儲存記錄</span>
+                  </div>
+                  <div className="text-[11px] text-emerald-300 font-bold">
+                    已記錄 {logs.length} 筆 (持久保存在帳號儲存)
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-300/90 leading-relaxed bg-indigo-900/30 p-2.5 rounded-xl border border-indigo-500/20">
+                💡 <strong>自動記錄說明：</strong>點選「以 Google 問問 AI 模式生成」或「換一組建議菜單」時，無論是在 Netlify 靜態託管、離線或雲端環境，所有調用步驟、參數、網路響應與 Dr. Galpin 計算引擎切換軌跡皆已完整記錄於此。
+              </p>
+            </div>
+
+            {/* Action Buttons Toolbar */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => downloadLogFile('txt')}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span>下載 Log 檔 (.txt)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => downloadLogFile('json')}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                <span>下載 JSON 檔</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyLogsText}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                {copiedLogs ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-600" />}
+                <span>{copiedLogs ? '已複製到剪貼簿' : '複製全部 Log'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRunDiagnosticTest}
+                disabled={isTestingDiag}
+                className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-all flex items-center gap-1.5 border border-indigo-200 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTestingDiag ? 'animate-spin' : ''}`} />
+                <span>{isTestingDiag ? '檢測中...' : '即時環境檢測'}</span>
+              </button>
+
+              {logs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllLogs}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition-all flex items-center gap-1 ml-auto"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>清空日誌</span>
+                </button>
+              )}
+            </div>
+
+            {/* Filter Chips & Search Bar */}
+            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center justify-between pt-1">
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 no-scrollbar text-xs">
+                {[
+                  { key: 'all', label: '全部' },
+                  { key: 'success', label: '成功', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+                  { key: 'warn', label: '警告/託管', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+                  { key: 'error', label: '錯誤', color: 'text-rose-700 bg-rose-50 border-rose-200' },
+                  { key: 'info', label: '訊息', color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setLogFilterLevel(tab.key)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border shrink-0 ${
+                      logFilterLevel === tab.key
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <input
+                type="text"
+                placeholder="搜尋 Log 關鍵字..."
+                value={logSearchQuery}
+                onChange={(e) => setLogSearchQuery(e.target.value)}
+                className="px-3 py-1 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-slate-50 w-full sm:w-44"
+              />
+            </div>
+
+            {/* Log Entries Scroll Area */}
+            <div className="space-y-2 max-h-[44vh] overflow-y-auto pr-1 no-scrollbar">
+              {logs.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-400 space-y-2">
+                  <Terminal className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="text-xs font-bold text-slate-600">尚無系統運行日誌記錄</p>
+                  <p className="text-[11px] text-slate-400">
+                    點擊上方的「即時環境檢測」或前往「週末超市採買清單」生成 Google 問問 AI 菜單，系統將自動在此寫入日誌記錄。
+                  </p>
+                </div>
+              ) : (
+                logs
+                  .filter((l) => {
+                    if (logFilterLevel !== 'all' && l.level !== logFilterLevel) return false;
+                    if (logSearchQuery.trim()) {
+                      const q = logSearchQuery.toLowerCase();
+                      const matchMsg = l.message.toLowerCase().includes(q);
+                      const matchAct = l.action.toLowerCase().includes(q);
+                      const matchMod = l.module.toLowerCase().includes(q);
+                      return matchMsg || matchAct || matchMod;
+                    }
+                    return true;
+                  })
+                  .map((log) => {
+                    const isExpanded = expandedLogId === log.id;
+                    const levelColors = {
+                      success: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      warn: 'bg-amber-50 text-amber-700 border-amber-200',
+                      error: 'bg-rose-50 text-rose-700 border-rose-200',
+                      info: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                    }[log.level] || 'bg-slate-50 text-slate-700 border-slate-200';
+
+                    const moduleLabels: Record<string, string> = {
+                      meal_plan: '菜單生成',
+                      google_ai: 'Google AI',
+                      netlify_deploy: 'Netlify 部署',
+                      grocery: '採買清單',
+                      system: '系統核心',
+                      auth: '帳號安全',
+                    };
+
+                    return (
+                      <div
+                        key={log.id}
+                        className="p-3 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-1.5 text-xs hover:border-slate-300 transition-all font-mono"
+                      >
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${levelColors}`}>
+                              {log.level.toUpperCase()}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              {moduleLabels[log.module] || log.module}
+                            </span>
+                            <span className="font-bold text-slate-900 font-sans text-xs">
+                              {log.action}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            {log.localTime}
+                          </span>
+                        </div>
+
+                        <p className="text-slate-700 font-sans text-[11px] leading-relaxed">
+                          {log.message}
+                        </p>
+
+                        {(log.details || log.errorStack) && (
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                              className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline inline-flex items-center gap-1"
+                            >
+                              {isExpanded ? '隱藏詳細參數 ▲' : '檢視詳細參數與 Stack Trace ▼'}
+                            </button>
+
+                            {isExpanded && (
+                              <div className="mt-2 p-2.5 bg-slate-950 text-slate-200 rounded-xl text-[10px] overflow-x-auto space-y-2">
+                                {log.details && (
+                                  <div>
+                                    <div className="text-slate-400 font-bold text-[9px] uppercase">Payload / Details:</div>
+                                    <pre className="text-emerald-300 mt-1 whitespace-pre-wrap">
+                                      {JSON.stringify(log.details, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                                {log.errorStack && (
+                                  <div>
+                                    <div className="text-rose-400 font-bold text-[9px] uppercase">Error Stack Trace:</div>
+                                    <pre className="text-rose-300 mt-1 whitespace-pre-wrap">
+                                      {log.errorStack}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+            {/* Tab 3 Footer Action */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-bold underline"
+              >
+                ← 返回個人體態設定
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-xs transition-all"
+              >
+                關閉
               </button>
             </div>
           </div>

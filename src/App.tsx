@@ -43,13 +43,14 @@ import {
   ArrowRight,
   ExternalLink,
   Lock,
-  Mail
+  Mail,
+  Terminal
 } from 'lucide-react';
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(() => loadUserProfile());
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profileModalInitialTab, setProfileModalInitialTab] = useState<'settings' | 'privacy'>('settings');
+  const [profileModalInitialTab, setProfileModalInitialTab] = useState<'settings' | 'privacy' | 'logs'>('settings');
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [isQuestionBankOpen, setIsQuestionBankOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'questions' | 'balancesheet' | 'trend' | 'grocery' | 'profile'>('home');
@@ -337,6 +338,21 @@ export default function App() {
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
               <span>隱私權政策與法律聲明</span>
+            </button>
+
+            <span className="text-slate-300">•</span>
+
+            <button
+              type="button"
+              onClick={() => {
+                setProfileModalInitialTab('logs');
+                setIsProfileModalOpen(true);
+              }}
+              className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold underline decoration-indigo-300 transition-colors"
+              title="檢視系統運行與 Netlify 部署 Log 檔"
+            >
+              <Terminal className="w-3.5 h-3.5 text-indigo-600" />
+              <span>系統運行 Log 檔</span>
             </button>
 
             <span className="text-slate-300">•</span>

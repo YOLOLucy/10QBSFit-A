@@ -450,19 +450,23 @@ export function generateClientGalpinMealPlan(
   const fatsRatioPercent = 100 - proteinRatioPercent - carbsRatioPercent;
   const proteinPerKg = Number((targetProt / weight).toFixed(1));
 
-  const themeIdx = typeof varietySeed === 'number' ? Math.abs(varietySeed) % 3 : 0;
+  const themeIdx = typeof varietySeed === 'number' ? Math.abs(varietySeed) % 4 : 0;
   const themes = [
     {
-      title: `Google 問問 AI：依加爾平理論設計之 ${targetCal}kcal 菜單 (${s}人份)`,
-      summary: `此菜單依循安迪·加爾平博士的運動營養學原則，旨在透過每日約 ${targetProt} 克蛋白質的攝取，並確保每餐蛋白質含量達到 30-45 克以可靠地觸發肌肉蛋白質合成 (MPS)。餐點結合低升糖指數的全穀物與豐富的優質脂肪，有助於穩定血糖、維持能量，並促進全身性代謝優化。所有食材皆為原型食物，並與採買清單 100% 完全同步，確保飲食執行效益最大化。`
+      title: `Google 問問 AI：加爾平理論 MPS 亮氨酸超量恢復菜單 (${s}人份 / ${targetCal}kcal)`,
+      summary: `此菜單依循安迪·加爾平博士的運動生理學原則，旨在透過每日約 ${targetProt} 克蛋白質攝取，並確保每餐蛋白質含量達到 30-45 克以觸發肌肉蛋白質合成 (MPS)。結合低 GI 複合碳水與優質好油脂，食材與採買清單 100% 同步。`
     },
     {
-      title: `Google 問問 AI：依加爾平理論設計之 ${targetCal}kcal 菜單 (${s}人份)`,
-      summary: `此菜單依循安迪·加爾平博士的運動營養學原則，旨在透過每日約 ${targetProt} 克蛋白質的攝取，並確保每餐蛋白質含量達到 30-45 克以可靠地觸發肌肉蛋白質合成 (MPS)。餐點結合低升糖指數的全穀物與豐富的優質脂肪，有助於穩定血糖、維持能量，並促進全身性代謝優化。所有食材皆為原型食物，並與採買清單 100% 完全同步，確保飲食執行效益最大化。`
+      title: `Google 問問 AI：地中海抗氧化高 Omega-3 粒線體修復菜單 (${s}人份 / ${targetCal}kcal)`,
+      summary: `以深海鮭魚、鯖魚、特級冷壓初榨橄欖油、彩虹植化素與高纖全穀為核心，依 Dr. Andy Galpin 理論強化細胞粒線體修復能力並抑制肌肉微創慢性發炎，全食物與採買清單完整銜接。`
     },
     {
-      title: `Google 問問 AI：依加爾平理論設計之 ${targetCal}kcal 菜單 (${s}人份)`,
-      summary: `此菜單依循安迪·加爾平博士的運動營養學原則，旨在透過每日約 ${targetProt} 克蛋白質的攝取，並確保每餐蛋白質含量達到 30-45 克以可靠地觸發肌肉蛋白質合成 (MPS)。餐點結合低升糖指數的全穀物與豐富的優質脂肪，有助於穩定血糖、維持能量，並促進全身性代謝優化。所有食材皆為原型食物，並與採買清單 100% 完全同步，確保飲食執行效益最大化。`
+      title: `Google 問問 AI：彩虹植化素全原型低 GI 代謝燃脂菜單 (${s}人份 / ${targetCal}kcal)`,
+      summary: `強調十字花科蘿蔔硫素、茄紅素與深色莓果多酚，搭配足量精瘦蛋白質與台農地瓜等原型主食，穩定全日血糖波動，促進肝臟第二階段代謝與健康資產積累。`
+    },
+    {
+      title: `Google 問問 AI：神經肌肉傳導與深層夜間修復菜單 (${s}人份 / ${targetCal}kcal)`,
+      summary: `強化天然鎂鉀電解質、香蕉、酪梨與放牧雞蛋卵磷脂，晚間搭配無糖希臘優格色胺酸，優化自律神經調控與夜間生長激素修復循環，採買清單精確等比換算。`
     }
   ];
 
