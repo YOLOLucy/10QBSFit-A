@@ -298,6 +298,9 @@ export const DEFAULT_PROFILE: UserProfile = {
   isInitialized: true,
   reminderEnabled: true,
   reminderTime: '20:30',
+  servings: 1,
+  healthGoal: '減脂維持 (Fat Loss & Satiety)',
+  dietPreference: '原型全食物均衡 (肉/魚/蛋/穀/蔬)',
 };
 
 // Seed realistic sample history for the past 6 days so trend chart is instantly rich and inspiring
@@ -397,7 +400,8 @@ export function generateClientGalpinMealPlan(
     targetCarbsG?: number;
     targetFatsG?: number;
   },
-  varietySeed?: number
+  varietySeed?: number,
+  cookingMethods: string[] = ['電鍋', '一鍋到底', '分開料理']
 ) {
   const s = Math.min(Math.max(Number(servings) || 1, 1), 4);
   const height = userBiometrics?.height || 172;
@@ -450,7 +454,7 @@ export function generateClientGalpinMealPlan(
   const fatsRatioPercent = 100 - proteinRatioPercent - carbsRatioPercent;
   const proteinPerKg = Number((targetProt / weight).toFixed(1));
 
-  const themeIdx = typeof varietySeed === 'number' ? Math.abs(varietySeed) % 4 : 0;
+  const themeIdx = typeof varietySeed === 'number' ? Math.abs(varietySeed) % 6 : 0;
   const themes = [
     {
       title: `Google 問問 AI：加爾平理論 MPS 亮氨酸超量恢復菜單 (${s}人份 / ${targetCal}kcal)`,
@@ -467,6 +471,14 @@ export function generateClientGalpinMealPlan(
     {
       title: `Google 問問 AI：神經肌肉傳導與深層夜間修復菜單 (${s}人份 / ${targetCal}kcal)`,
       summary: `強化天然鎂鉀電解質、香蕉、酪梨與放牧雞蛋卵磷脂，晚間搭配無糖希臘優格色胺酸，優化自律神經調控與夜間生長激素修復循環，採買清單精確等比換算。`
+    },
+    {
+      title: `Google 問問 AI：全食物抗炎與高能量輸出充能菜單 (${s}人份 / ${targetCal}kcal)`,
+      summary: `針對高活動量與耐力表現設計，以三色藜麥、高纖燕麥、深海魚油與精瘦牛里肌為核心，強化肌酸儲備與細胞滲透壓平衡，採買清單精準對齊 7 天備餐。`
+    },
+    {
+      title: `Google 問問 AI：腸道微生態優化與雙植物蛋白平衡菜單 (${s}人份 / ${targetCal}kcal)`,
+      summary: `融合非基改板豆腐、原味毛豆仁、綜合野菇多醣體與純濃無糖希臘優格，建立高多樣性腸道菌叢環境，加速營養吸收並全面降低內源性氧化壓力。`
     }
   ];
 

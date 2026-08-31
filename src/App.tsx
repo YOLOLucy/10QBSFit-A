@@ -310,6 +310,10 @@ export default function App() {
             <WeekendGroceryMealPlan
               userProfile={profile}
               latestRecord={todayRecord || latestRecord}
+              onOpenProfileModal={() => {
+                setProfileModalInitialTab('settings');
+                setIsProfileModalOpen(true);
+              }}
             />
           )}
         </div>

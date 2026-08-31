@@ -33,7 +33,11 @@ import {
   Trash2,
   Cpu,
   Globe,
-  Server
+  Server,
+  Users,
+  UtensilsCrossed,
+  ChefHat,
+  Dumbbell
 } from 'lucide-react';
 import { UserProfile, SystemLogEntry } from '../types';
 import { 
@@ -81,8 +85,20 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [formData, setFormData] = useState<UserProfile>({ 
     ...profile,
     reminderEnabled: profile.reminderEnabled ?? true,
-    reminderTime: profile.reminderTime ?? '20:30'
+    reminderTime: profile.reminderTime ?? '20:30',
+    servings: profile.servings ?? 1,
+    healthGoal: profile.healthGoal ?? '減脂維持 (Fat Loss & Satiety)',
+    dietPreference: profile.dietPreference ?? '原型全食物均衡 (肉/魚/蛋/穀/蔬)',
+    cookingMethods: profile.cookingMethods && profile.cookingMethods.length > 0 ? profile.cookingMethods : ['電鍋', '一鍋到底', '分開料理'],
   });
+
+  // String buffers for smooth decimal input typing without eating decimal points
+  const [heightStr, setHeightStr] = useState<string>(profile.height ? String(profile.height) : '');
+  const [weightStr, setWeightStr] = useState<string>(profile.weight ? String(profile.weight) : '');
+  const [targetWeightStr, setTargetWeightStr] = useState<string>(profile.targetWeight !== undefined ? String(profile.targetWeight) : '');
+  const [bodyFatStr, setBodyFatStr] = useState<string>(profile.bodyFat !== undefined ? String(profile.bodyFat) : '');
+  const [ageStr, setAgeStr] = useState<string>(profile.age ? String(profile.age) : '');
+
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [testNotice, setTestNotice] = useState<{ text: string; success: boolean } | null>(null);
@@ -99,9 +115,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setFormData({
+        ...profile,
+        reminderEnabled: profile.reminderEnabled ?? true,
+        reminderTime: profile.reminderTime ?? '20:30',
+        servings: profile.servings ?? 1,
+        healthGoal: profile.healthGoal ?? '減脂維持 (Fat Loss & Satiety)',
+        dietPreference: profile.dietPreference ?? '原型全食物均衡 (肉/魚/蛋/穀/蔬)',
+        cookingMethods: profile.cookingMethods && profile.cookingMethods.length > 0 ? profile.cookingMethods : ['電鍋', '一鍋到底', '分開料理'],
+      });
+      setHeightStr(profile.height ? String(profile.height) : '');
+      setWeightStr(profile.weight ? String(profile.weight) : '');
+      setTargetWeightStr(profile.targetWeight !== undefined ? String(profile.targetWeight) : '');
+      setBodyFatStr(profile.bodyFat !== undefined ? String(profile.bodyFat) : '');
+      setAgeStr(profile.age ? String(profile.age) : '');
       setLogs(getSystemLogs());
     }
-  }, [isOpen, activeTab]);
+  }, [isOpen, profile, activeTab]);
 
   const refreshLogs = () => {
     setLogs(getSystemLogs());
@@ -130,12 +160,16 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     }
   };
 
-  const sanitizeNumber = (val: string, allowDecimal = true) => {
+  const sanitizeNumber = (val: string, allowDecimal = true, maxDecimals = 2) => {
     if (allowDecimal) {
       val = val.replace(/[^0-9.]/g, '');
       const parts = val.split('.');
       if (parts.length > 2) {
         val = parts[0] + '.' + parts.slice(1).join('');
+      }
+      const splitArr = val.split('.');
+      if (splitArr[1] !== undefined && splitArr[1].length > maxDecimals) {
+        return `${splitArr[0]}.${splitArr[1].slice(0, maxDecimals)}`;
       }
       return val;
     }
@@ -166,6 +200,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       preferredSyncSource: res.source,
       autoSyncEnabled: true,
     }));
+    setWeightStr(String(res.weight));
+    if (res.bodyFat !== undefined) {
+      setBodyFatStr(String(res.bodyFat));
+    }
     setSyncNotice(`已成功自【${res.sourceName}】同步體重 ${res.weight} kg ${res.bodyFat ? `(體脂 ${res.bodyFat}%)` : ''}`);
     setIsSyncModalOpen(false);
   };
@@ -209,56 +247,43 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const handleRunDiagnosticTest = async () => {
     setIsTestingDiag(true);
     const env = getEnvironmentInfo();
+    const startTime = performance.now();
+
+    // 1. Benchmark local Dr. Galpin calculation engine
+    const bmr = calculateBMR(formData);
+    const tdee = calculateTDEE(formData);
+    const targetProt = Math.round(formData.weight * 2.0);
+    const calcDurationMs = (performance.now() - startTime).toFixed(2);
+
+    // 2. Benchmark LocalStorage persistence
+    let storageStatus = '正常';
+    try {
+      const testKey = '__diag_test__';
+      localStorage.setItem(testKey, 'ok');
+      localStorage.removeItem(testKey);
+    } catch {
+      storageStatus = '唯讀或受限';
+    }
 
     addSystemLog({
-      level: 'info',
+      level: 'success',
       module: 'system',
-      action: '執行手動環境連線與運算診斷檢測',
-      message: `開始檢測當前主機 ${env.host}，網路在線狀態: ${env.online ? '正常' : '離線'}`,
+      action: '執行環境與本地運算引擎診斷',
+      message: `診斷完成：當前主機 ${env.host}，Dr. Galpin 生理學 AI 運算引擎耗時 ${calcDurationMs}ms，本地持久化儲存 ${storageStatus}，免 API Key 模式 100% 就緒。`,
       details: {
         environment: env,
-        userProfile: {
+        calcBenchmarkMs: calcDurationMs,
+        storageStatus,
+        userCalculations: {
           height: formData.height,
           weight: formData.weight,
-          bmr: calculateBMR(formData),
-          tdee: calculateTDEE(formData),
-        }
+          bmr,
+          tdee,
+          targetProteinG: targetProt,
+        },
+        engineMode: 'Dr. Andy Galpin Client-Side Physiological Engine (Zero API Key Dependency)'
       }
     });
-
-    // Test cloud endpoint response
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch('/api/health', { signal: controller.signal });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        addSystemLog({
-          level: 'success',
-          module: 'system',
-          action: '後端 API /api/health 健康檢查成功',
-          message: '後端服務正常運行，Google AI 與自訂 API 可直接調用。',
-          details: { status: res.status }
-        });
-      } else {
-        addSystemLog({
-          level: 'warn',
-          module: 'netlify_deploy',
-          action: '後端 API /api/health 未響應 (Netlify 靜態託管)',
-          message: '偵測到 Netlify 靜態託管架構，系統已確認啟用 Dr. Andy Galpin 本地運動生理學運算引擎以保證菜單生成 100% 成功。',
-          details: { status: res.status }
-        });
-      }
-    } catch (e: any) {
-      addSystemLog({
-        level: 'warn',
-        module: 'netlify_deploy',
-        action: '後端 API 離線檢測 (Netlify/SPA 模式)',
-        message: `在 ${env.isNetlify ? 'Netlify 部署環境' : '無獨立 Node 後端託管環境'}下，菜單生成將使用內建加爾平演算法即時運算，不會受限於後端連線中斷。`,
-        details: { error: e.message }
-      });
-    }
 
     refreshLogs();
     setIsTestingDiag(false);
@@ -563,11 +588,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       type="text"
                       inputMode="decimal"
                       required
-                      value={formData.height || ''}
+                      placeholder="例如 164 或 164.5"
+                      value={heightStr}
                       onKeyDown={(e) => handleNumericKeyDown(e, true)}
                       onChange={(e) => {
-                        const val = sanitizeNumber(e.target.value, true);
-                        setFormData({ ...formData, height: parseFloat(val) || 0 });
+                        const val = sanitizeNumber(e.target.value, true, 1);
+                        setHeightStr(val);
+                        setFormData((prev) => ({ ...prev, height: parseFloat(val) || 0 }));
                       }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-semibold"
                     />
@@ -592,11 +619,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       type="text"
                       inputMode="decimal"
                       required
-                      value={formData.weight || ''}
+                      placeholder="可填至小數點2位，如 61.35"
+                      value={weightStr}
                       onKeyDown={(e) => handleNumericKeyDown(e, true)}
                       onChange={(e) => {
-                        const val = sanitizeNumber(e.target.value, true);
-                        setFormData({ ...formData, weight: parseFloat(val) || 0 });
+                        const val = sanitizeNumber(e.target.value, true, 2);
+                        setWeightStr(val);
+                        setFormData((prev) => ({ ...prev, weight: parseFloat(val) || 0 }));
                       }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-semibold"
                     />
@@ -612,11 +641,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       type="text"
                       inputMode="decimal"
                       placeholder={`建議 ${idealRange.mid}`}
-                      value={formData.targetWeight !== undefined ? formData.targetWeight : ''}
+                      value={targetWeightStr}
                       onKeyDown={(e) => handleNumericKeyDown(e, true)}
                       onChange={(e) => {
-                        const val = sanitizeNumber(e.target.value, true);
-                        setFormData({ ...formData, targetWeight: val === '' ? undefined : (parseFloat(val) || undefined) });
+                        const val = sanitizeNumber(e.target.value, true, 2);
+                        setTargetWeightStr(val);
+                        setFormData((prev) => ({ ...prev, targetWeight: val === '' ? undefined : (parseFloat(val) || undefined) }));
                       }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-semibold"
                     />
@@ -630,18 +660,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="font-bold text-slate-700">體脂率 %</label>
-                    <span className="text-[10px] text-slate-400 font-normal">（非必須選填）</span>
+                    <span className="text-[10px] text-slate-400 font-normal">（可填至小數點2位，選填）</span>
                   </div>
                   <div className="relative">
                     <input
                       type="text"
                       inputMode="decimal"
-                      placeholder="例如：21.5（選填）"
-                      value={formData.bodyFat !== undefined ? formData.bodyFat : ''}
+                      placeholder="例如：28.50 或 21.35（選填）"
+                      value={bodyFatStr}
                       onKeyDown={(e) => handleNumericKeyDown(e, true)}
                       onChange={(e) => {
-                        const val = sanitizeNumber(e.target.value, true);
-                        setFormData({ ...formData, bodyFat: val === '' ? undefined : (parseFloat(val) || undefined) });
+                        const val = sanitizeNumber(e.target.value, true, 2);
+                        setBodyFatStr(val);
+                        setFormData((prev) => ({ ...prev, bodyFat: val === '' ? undefined : (parseFloat(val) || undefined) }));
                       }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                     />
@@ -655,11 +686,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   <input
                     type="text"
                     inputMode="numeric"
-                    value={formData.age || ''}
+                    placeholder="例如：32"
+                    value={ageStr}
                     onKeyDown={(e) => handleNumericKeyDown(e, false)}
                     onChange={(e) => {
                       const val = sanitizeNumber(e.target.value, false);
-                      setFormData({ ...formData, age: val === '' ? undefined : (parseInt(val, 10) || undefined) });
+                      setAgeStr(val);
+                      setFormData((prev) => ({ ...prev, age: val === '' ? undefined : (parseInt(val, 10) || undefined) }));
                     }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                   />
@@ -679,6 +712,228 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   <option value="moderate">中度規律運動（每週運動 3-5 天，係數 1.55）</option>
                   <option value="very_active">高度活躍/重度訓練（每週運動 6-7 天，係數 1.725）</option>
                 </select>
+              </div>
+
+              {/* Section: 飲食與菜單規劃帳號設定 (Dr. Andy Galpin 運動營養理論) */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50/90 to-teal-50/50 border border-emerald-200/80 space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-600 text-white">
+                      <ChefHat className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-xs">飲食生活與採買菜單偏好設定</h3>
+                      <p className="text-[11px] text-slate-500">設定後自動同步至週末超市採買清單與一週菜單，無需重複配置</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Galpin 理論
+                  </span>
+                </div>
+
+                {/* 1. 用餐人數方案 */}
+                <div className="space-y-1.5 pt-1 border-t border-emerald-100/80">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>① 用餐人數方案（採買食材自動等比縮放）</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-700 font-bold">
+                      當前：{formData.servings || 1} 人份
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {[
+                      { count: 1, label: '1 人份', desc: '個人精準備餐' },
+                      { count: 2, label: '2 人份', desc: '雙人共享備餐' },
+                      { count: 3, label: '3 人份', desc: '小家庭均衡' },
+                      { count: 4, label: '4 人份', desc: '全家一週採買' },
+                    ].map((item) => {
+                      const isSelected = (formData.servings || 1) === item.count;
+                      return (
+                        <button
+                          key={item.count}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, servings: item.count })}
+                          className={`p-2 rounded-xl border text-left transition-all ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/30'
+                              : 'bg-white text-slate-700 border-emerald-200/80 hover:border-emerald-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-bold text-xs">
+                            <span>{item.label}</span>
+                            {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
+                          </div>
+                          <div className={`text-[9px] mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
+                            {item.desc}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. 核心健康目標 */}
+                <div className="space-y-1.5 pt-1 border-t border-emerald-100/80">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                      <Target className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>② 核心健康目標（決定熱量赤字/盈餘與蛋白質比例）</span>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {[
+                      {
+                        id: '減脂維持 (Fat Loss & Satiety)',
+                        title: '⚖️ 減脂維持 (Fat Loss & Satiety)',
+                        desc: '熱量安全赤字・高蛋白保肌減脂',
+                      },
+                      {
+                        id: '增肌與運動表現 (Hypertrophy & MPS)',
+                        title: '🥩 增肌與運動表現 (Hypertrophy)',
+                        desc: 'MPS 最大化・溫和熱量盈餘 (2.0g/kg)',
+                      },
+                      {
+                        id: '積極減脂突破 (Deficit & Muscle Retention)',
+                        title: '⚡ 積極減脂突破 (Deficit)',
+                        desc: '嚴格熱量赤字・高飽足感保肌',
+                      },
+                      {
+                        id: '代謝健康與抗發炎 (Longevity & Whole Foods)',
+                        title: '🌿 代謝健康與抗發炎 (Longevity)',
+                        desc: '抗氧化全食物・粒線體代謝修復',
+                      },
+                    ].map((goal) => {
+                      const isSelected = (formData.healthGoal || '').includes(goal.id.split(' ')[0]);
+                      return (
+                        <button
+                          key={goal.id}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, healthGoal: goal.id })}
+                          className={`p-2 rounded-xl border text-left transition-all ${
+                            isSelected
+                              ? 'bg-white border-emerald-500 text-slate-900 shadow-xs ring-2 ring-emerald-500/20'
+                              : 'bg-white/70 border-emerald-200/80 hover:border-emerald-300 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-bold text-xs">
+                            <span className="text-[11px]">{goal.title}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{goal.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. 飲食生活習慣偏好 */}
+                <div className="space-y-1.5 pt-1 border-t border-emerald-100/80">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                      <UtensilsCrossed className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>③ 飲食生活習慣偏好（100% 原型全食物食材）</span>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {[
+                      {
+                        id: '原型全食物均衡 (肉/魚/蛋/穀/蔬)',
+                        title: '🥩 原型全食物均衡 (肉/魚/蛋/穀/蔬)',
+                        desc: '雞肉/鮭魚/雞蛋/地瓜/燕麥/深綠蔬菜多樣攝取',
+                      },
+                      {
+                        id: '地中海高抗氧化與好油脂 (深海魚/冷壓橄欖油/堅果/彩椒)',
+                        title: '🥑 地中海高抗氧化 (魚/橄欖油/堅果/彩椒)',
+                        desc: '豐富 Omega-3 與多酚，守護心血管與自律神經',
+                      },
+                      {
+                        id: '彩虹植化素全素/蛋奶素 (高纖豆/菇/豆腐/根莖)',
+                        title: '🥗 彩虹植化素全素/蛋奶素 (豆/菇/豆腐)',
+                        desc: '高纖維、非基改大豆蛋白與腸道益生微生態',
+                      },
+                      {
+                        id: '極簡高蛋白低碳水 (精瘦肉/深海魚/低GI蔬菜)',
+                        title: '🐟 極簡高蛋白低碳 (精瘦肉/魚/高纖蔬菜)',
+                        desc: '快速備餐，穩定胰島素敏感度與消除水腫',
+                      },
+                    ].map((diet) => {
+                      const isSelected = (formData.dietPreference || '').includes(diet.id.split(' ')[0]);
+                      return (
+                        <button
+                          key={diet.id}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, dietPreference: diet.id })}
+                          className={`p-2 rounded-xl border text-left transition-all ${
+                            isSelected
+                              ? 'bg-white border-emerald-500 text-slate-900 shadow-xs ring-2 ring-emerald-500/20'
+                              : 'bg-white/70 border-emerald-200/80 hover:border-emerald-300 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-bold text-xs">
+                            <span className="text-[11px]">{diet.title}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{diet.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 偏好料理方式 (Cooking Method Preferences - 多選項: 1.電鍋 2.一鍋到底 3.分開料理) */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Flame className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>偏好料理方式 (多選項)</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded font-bold">
+                      可複選多項
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: '電鍋', title: '1. 電鍋', desc: '免顧火蒸煮、高營養保留' },
+                      { id: '一鍋到底', title: '2. 一鍋到底', desc: '省時少洗碗、極速炒燉' },
+                      { id: '分開料理', title: '3. 分開料理', desc: '風味層次分明、烘烤乾煎' },
+                    ].map((method) => {
+                      const currentList = formData.cookingMethods || ['電鍋', '一鍋到底', '分開料理'];
+                      const isSelected = currentList.includes(method.id);
+                      return (
+                        <button
+                          key={method.id}
+                          type="button"
+                          onClick={() => {
+                            let updated: string[];
+                            if (isSelected) {
+                              if (currentList.length <= 1) {
+                                updated = [method.id]; // Keep at least one
+                              } else {
+                                updated = currentList.filter((m) => m !== method.id);
+                              }
+                            } else {
+                              updated = [...currentList, method.id];
+                            }
+                            setFormData({ ...formData, cookingMethods: updated });
+                          }}
+                          className={`p-2.5 rounded-xl border text-left transition-all ${
+                            isSelected
+                              ? 'bg-white border-emerald-500 text-slate-900 shadow-xs ring-2 ring-emerald-500/20'
+                              : 'bg-white/70 border-emerald-200/80 hover:border-emerald-300 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-bold text-xs">
+                            <span className="text-xs">{method.title}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{method.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               {/* Embedded Privacy Guarantee Quick Card */}

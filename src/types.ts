@@ -73,6 +73,10 @@ export interface UserProfile {
   preferredSyncSource?: WeightSource;
   reminderEnabled?: boolean;
   reminderTime?: string; // e.g. "20:00" or "08:00"
+  servings?: number; // 用餐人數方案 (例如 1, 2, 3, 4 人份)
+  healthGoal?: string; // 核心健康目標 (例如 減脂維持, 增肌與運動表現, 積極減脂突破, 代謝健康與抗發炎)
+  dietPreference?: string; // 飲食生活習慣偏好 (例如 原型全食物均衡, 地中海高抗氧化, 彩虹植化素全素, 極簡高蛋白低碳水)
+  cookingMethods?: string[]; // 偏好料理方式多選項 (例如 ['電鍋', '一鍋到底', '分開料理'])
 }
 
 export interface DailyAnswer {

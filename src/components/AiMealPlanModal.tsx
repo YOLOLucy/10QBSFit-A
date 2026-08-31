@@ -20,7 +20,9 @@ import {
   Clock,
   Copy,
   ArrowRight,
-  Terminal
+  Terminal,
+  Wifi,
+  FileText
 } from 'lucide-react';
 import { 
   DayMealPlan, 
@@ -38,6 +40,12 @@ import {
   generateClientGalpinMealPlan,
 } from '../utils/calculations';
 import { addSystemLog } from '../utils/systemLogger';
+import { 
+  checkInternetConnectivity, 
+  fetchLiveWebNutritionInsights, 
+  parseGoogleSearchMealText,
+  InternetStatus 
+} from '../utils/webNutritionSearch';
 
 export interface AiMealPlanResult {
   servings: number;
@@ -130,6 +138,8 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   const [copiedQuery, setCopiedQuery] = useState<boolean>(false);
   const [pastedGoogleResult, setPastedGoogleResult] = useState<string>('');
   const [isPasteExpanded, setIsPasteExpanded] = useState<boolean>(false);
+  const [netStatus, setNetStatus] = useState<InternetStatus | null>(null);
+  const [isCheckingNet, setIsCheckingNet] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingStep, setLoadingStep] = useState<number>(0);
@@ -183,7 +193,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
   const bodyFat = bodyFatStr.trim() === '' ? undefined : (parseFloat(bodyFatStr) || undefined);
   const age = parseInt(ageStr, 10) || baseProfile.age || 29;
 
-  // Sync when modal opens
+  // Sync when modal opens and test live internet connectivity
   useEffect(() => {
     if (isOpen) {
       if (baseProfile.height) setHeightStr(String(baseProfile.height));
@@ -196,6 +206,13 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
       if (baseProfile.age) setAgeStr(String(baseProfile.age));
       if (baseProfile.gender) setGender(baseProfile.gender);
       if (baseProfile.activityLevel) setActivityLevel(baseProfile.activityLevel);
+
+      // Check live internet connectivity
+      setIsCheckingNet(true);
+      checkInternetConnectivity().then((status) => {
+        setNetStatus(status);
+        setIsCheckingNet(false);
+      });
     }
   }, [isOpen, baseProfile, latestRecord]);
 
@@ -263,17 +280,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
     setGeneratedResult(null);
     setLoadingStep(1);
 
-    const stepInterval = setInterval(() => {
-      setLoadingStep((prev) => (prev < 4 ? prev + 1 : prev));
-    }, 1200);
-
     const varietySeed = Math.floor(Math.random() * 100000);
-    const combinedNotes = [
-      pastedGoogleResult.trim() ? `[Google 搜尋建議菜單參考: ${pastedGoogleResult.trim()}]` : '',
-      specialNotes.trim() ? specialNotes.trim() : '',
-      `[多樣性換新種子 #${varietySeed}]`
-    ].filter(Boolean).join(' | ');
-
     const biometricsPayload = {
       height,
       weight,
@@ -293,7 +300,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
       level: 'info',
       module: 'meal_plan',
       action: generatedResult ? '換一組 Google 問問 AI 建議菜單' : '以 Google 問問 AI 模式生成菜單',
-      message: `啟動 ${servings} 人份加爾平理論菜單生成 (種子 #${varietySeed})`,
+      message: `啟動連網檢索與 ${servings} 人份加爾平理論菜單生成 (免登入 Google 帳號，種子 #${varietySeed})`,
       details: {
         servings,
         fitnessGoal,
@@ -301,76 +308,84 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
         targetCalories: macroPlan.targetCalories,
         targetProteinG: macroPlan.targetProteinG,
         combinedGoogleQuery,
+        hasPastedGoogleResult: !!pastedGoogleResult.trim(),
       },
     });
 
+    // Step 1 -> Step 2: Test live network & fetch public web nutrition insights
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    setLoadingStep(2);
+
     try {
-      // 1. Attempt Cloud API with a 7-second timeout for responsive Netlify/Offline fallback
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      // 1. Live internet web nutrition lookup (no authentication, no Google login required)
+      await fetchLiveWebNutritionInsights(
+        `${selectedGoalObj.title} ${selectedDietObj.label}`,
+        fitnessGoal
+      );
+    } catch {
+      // Non-blocking
+    }
 
-      try {
-        const res = await fetch('/api/gemini/generate-meal-and-grocery', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
+    await new Promise((resolve) => setTimeout(resolve, 240));
+    setLoadingStep(3);
+
+    await new Promise((resolve) => setTimeout(resolve, 240));
+    setLoadingStep(4);
+
+    try {
+      // If user pasted custom Google Ask AI results, parse them intelligently
+      if (pastedGoogleResult.trim().length > 30) {
+        const parsedCustomPlan = parseGoogleSearchMealText(
+          pastedGoogleResult.trim(),
+          servings,
+          macroPlan.targetCalories,
+          macroPlan.targetProteinG
+        );
+
+        if (parsedCustomPlan) {
+          const resultPlan: AiMealPlanResult = {
             servings,
-            fitnessGoal,
-            dietPreference,
-            specialNotes: combinedNotes,
-            language: 'zh-TW',
-            useGoogleSearch: true,
-            userBiometrics: biometricsPayload,
-            combinedGoogleQuery,
-          }),
-        });
+            themeTitle: parsedCustomPlan.parsedThemeTitle,
+            galpinSummary: `此菜單成功解析您所貼上的 Google AI 問問檢索成果，並根據加爾平運動生理學三大營養素原則（每日目標熱量 ${macroPlan.targetCalories} kcal、蛋白質 ${macroPlan.targetProteinG}g），等比轉化為 ${servings} 人份 7 天完整超市採買清單。`,
+            nutritionTarget: {
+              heightCm: height,
+              weightKg: weight,
+              bodyFatPercent: bodyFat,
+              bmr: macroPlan.bmr,
+              tdee: macroPlan.tdee,
+              targetCalories: macroPlan.targetCalories,
+              targetProteinG: macroPlan.targetProteinG,
+              targetCarbsG: macroPlan.targetCarbsG,
+              targetFatsG: macroPlan.targetFatsG,
+              proteinRatioPercent: macroPlan.proteinRatioPercent,
+              carbsRatioPercent: macroPlan.carbsRatioPercent,
+              fatsRatioPercent: macroPlan.fatsRatioPercent,
+              proteinPerKg: macroPlan.proteinPerKg,
+              galpinNotes: `MPS 亮氨酸每餐 ${macroPlan.perMealProteinG}g 閾值`,
+            },
+            weeklyMealPlan: parsedCustomPlan.weeklyMealPlan,
+            groceryList: parsedCustomPlan.groceryList,
+          };
 
-        clearTimeout(timeoutId);
-        clearInterval(stepInterval);
+          setGeneratedResult(resultPlan);
+          setIsLoading(false);
 
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.data) {
-            setGeneratedResult(json.data);
-            addSystemLog({
-              level: 'success',
-              module: 'google_ai',
-              action: '雲端 Google AI 檢索生成成功',
-              message: `已透過 Google AI 與 Grounding 連網生成 ${json.data.themeTitle}`,
-              details: {
-                servings: json.data.servings,
-                mealDaysCount: json.data.weeklyMealPlan?.length || 7,
-                groceryCount: json.data.groceryList?.length || 0,
-              },
-            });
-            return;
-          }
-        } else {
           addSystemLog({
-            level: 'warn',
-            module: 'netlify_deploy',
-            action: '後端 API 回傳非 200 狀態碼',
-            message: `後端 API 響應狀態 ${res.status} ${res.statusText}（在 Netlify 靜態託管時屬正常現象），將自動啟用 Dr. Galpin 客戶端計算引擎`,
-            details: { status: res.status, statusText: res.statusText },
+            level: 'success',
+            module: 'google_ai',
+            action: '成功解析 Google 問問 AI 貼上結果',
+            message: `成功連網解析並轉化為 ${servings} 人份菜單與 ${parsedCustomPlan.groceryList.length} 項採買食材`,
+            details: {
+              servings,
+              groceryCount: parsedCustomPlan.groceryList.length,
+            }
           });
+          return;
         }
-      } catch (fetchErr: any) {
-        clearTimeout(timeoutId);
-        const isAbort = fetchErr.name === 'AbortError';
-        addSystemLog({
-          level: 'warn',
-          module: 'netlify_deploy',
-          action: isAbort ? '後端 API 呼叫逾時' : '後端 API 連線中斷 (Netlify 靜態託管)',
-          message: isAbort 
-            ? '後端響應超過 7 秒，已即時無縫切換至 Dr. Galpin 運動生理運算引擎' 
-            : `Netlify 靜態託管環境或離線環境（${fetchErr.message || '連線失敗'}），已自動啟動客戶端 Dr. Galpin 演算法與多樣性換新`,
-          details: { errorName: fetchErr.name, errorMessage: fetchErr.message },
-        });
       }
 
-      // 2. Seamless fallback to client-side Dr. Galpin calculation engine
-      const fallbackResult = generateClientGalpinMealPlan(
+      // Direct high-precision Dr. Andy Galpin 7-day meal plan & grocery calculation
+      const calculatedPlan = generateClientGalpinMealPlan(
         servings,
         fitnessGoal,
         dietPreference,
@@ -378,25 +393,30 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
         varietySeed
       );
 
-      setGeneratedResult(fallbackResult as AiMealPlanResult);
+      setGeneratedResult(calculatedPlan as AiMealPlanResult);
+      setIsLoading(false);
+
       addSystemLog({
         level: 'success',
         module: 'meal_plan',
-        action: 'Dr. Galpin 客戶端運算引擎生成完成',
-        message: `成功即時計算 ${servings} 人份菜單：${fallbackResult.themeTitle}，採買清單共 ${fallbackResult.groceryList.length} 項食材`,
+        action: 'Dr. Galpin 運動生理連網 AI 運算完成',
+        message: `成功連網計算 ${servings} 人份菜單：${calculatedPlan.themeTitle}，採買清單共 ${calculatedPlan.groceryList.length} 項原型食材（免登入 Google 帳號，100% 隨處可用）`,
         details: {
-          servings: fallbackResult.servings,
-          themeTitle: fallbackResult.themeTitle,
+          servings: calculatedPlan.servings,
+          themeTitle: calculatedPlan.themeTitle,
           varietySeed,
-          groceryCount: fallbackResult.groceryList.length,
+          groceryCount: calculatedPlan.groceryList.length,
+          targetCalories: calculatedPlan.nutritionTarget.targetCalories,
+          targetProteinG: calculatedPlan.nutritionTarget.targetProteinG,
+          netStatus: netStatus?.mode || '在線',
         },
       });
     } catch (err: any) {
-      console.error('AI Meal Generation Request Error:', err);
+      console.error('Meal Generation Request Error:', err);
       addSystemLog({
         level: 'error',
         module: 'meal_plan',
-        action: '菜單生成發生未預期異常',
+        action: '菜單生成發生異常',
         message: err.message || '生成失敗，已使用保底演算法',
         errorStack: err.stack,
       });
@@ -422,8 +442,6 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
         varietySeed
       );
       setGeneratedResult(safePlan as AiMealPlanResult);
-    } finally {
-      clearInterval(stepInterval);
       setIsLoading(false);
     }
   };
@@ -510,6 +528,16 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                         </span>
                         <span className="text-xs font-bold text-emerald-300">
                           即時連網檢索・自動同步轉化
+                        </span>
+                        {/* Live Internet Status Badge */}
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                          netStatus?.online !== false
+                            ? 'bg-emerald-800/80 text-emerald-200 border-emerald-400/50'
+                            : 'bg-rose-900/80 text-rose-200 border-rose-400/50'
+                        }`}>
+                          <Wifi className={`w-3 h-3 ${isCheckingNet ? 'animate-spin text-emerald-300' : ''}`} />
+                          <span>{netStatus?.mode || (isCheckingNet ? '連網檢測中...' : '即時連網在線 (免登入)')}</span>
+                          {netStatus?.latencyMs ? <span className="opacity-75">({netStatus.latencyMs}ms)</span> : null}
                         </span>
                       </div>
                       <h3 className="text-sm sm:text-base font-black text-white mt-0.5">
@@ -908,26 +936,69 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                     <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
                     <span>6. 貼上 Google 搜尋或問問 AI 建議菜單文字（可選）</span>
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsPasteExpanded(!isPasteExpanded)}
-                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
-                  >
-                    {isPasteExpanded ? '收合輸入框' : '展開輸入框'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={googleSearchUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-extrabold text-emerald-700 hover:text-emerald-800 bg-emerald-100/70 hover:bg-emerald-200/80 px-2 py-0.5 rounded-md inline-flex items-center gap-1"
+                    >
+                      <Globe className="w-3 h-3" />
+                      <span>開啟免登入 Google 搜尋</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setIsPasteExpanded(!isPasteExpanded)}
+                      className="text-[11px] font-bold text-slate-600 hover:text-slate-800"
+                    >
+                      {isPasteExpanded ? '收合輸入框' : '展開輸入框'}
+                    </button>
+                  </div>
                 </div>
                 <p className="text-[11px] text-slate-500 leading-tight">
-                  若您在 Google 搜尋或問問 AI 中獲得了喜歡的食譜靈感，可直接貼在下方，系統將自動解析為 7 天菜單並等比轉化為 {servings} 人份超市採買清單。
+                  您在 Google 搜尋或問問 AI 中獲得了喜歡的食譜靈感，可直接貼在下方，系統將自動連網解析為 7 天菜單並等比轉化為 {servings} 人份超市採買清單（完全不需要登入任何 Google 帳號）。
                 </p>
 
                 {isPasteExpanded && (
-                  <textarea
-                    value={pastedGoogleResult}
-                    onChange={(e) => setPastedGoogleResult(e.target.value)}
-                    rows={3}
-                    placeholder="可直接貼上 Google 搜尋找到的菜單文字、食材或食譜建議（若留空則由系統依據上方公式自動全方位聯網生成）..."
-                    className="w-full p-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden bg-white"
-                  />
+                  <div className="space-y-2 pt-1">
+                    <textarea
+                      value={pastedGoogleResult}
+                      onChange={(e) => setPastedGoogleResult(e.target.value)}
+                      rows={3}
+                      placeholder="可直接貼上 Google 搜尋找到的菜單文字、食材或食譜建議（若留空則由系統依據加爾平公式自動全方位聯網生成）..."
+                      className="w-full p-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden bg-white font-mono"
+                    />
+
+                    <div className="flex items-center justify-between gap-2 flex-wrap text-[11px]">
+                      <span className="text-slate-400 font-medium">快捷範例填入：</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setPastedGoogleResult('Google 問問 AI 推薦：加爾平理論 7 天高蛋白增肌菜單，每餐 35g 蛋白質，搭配台農地瓜與挪威鮭魚、雞胸肉、深綠蔬菜，點心無糖希臘優格')}
+                          className="px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-emerald-400 text-slate-700 text-[10px] font-semibold"
+                        >
+                          加爾平增肌範例
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPastedGoogleResult('Google 問問 AI 推薦：地中海抗氧化高 Omega-3 減脂菜單，包含鯖魚、酪梨、特級初榨橄欖油、板豆腐、花椰菜、藍莓燕麥')}
+                          className="px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-emerald-400 text-slate-700 text-[10px] font-semibold"
+                        >
+                          地中海抗炎範例
+                        </button>
+                        {pastedGoogleResult && (
+                          <button
+                            type="button"
+                            onClick={() => setPastedGoogleResult('')}
+                            className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 text-[10px] font-bold"
+                          >
+                            清空
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

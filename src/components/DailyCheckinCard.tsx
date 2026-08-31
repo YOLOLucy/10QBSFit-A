@@ -59,6 +59,10 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
     return existingRecord?.weight || profile.weight || 65.0;
   });
 
+  const [todayWeightStr, setTodayWeightStr] = useState<string>(() => {
+    return String(existingRecord?.weight || profile.weight || 65.0);
+  });
+
   const [todayBodyFat, setTodayBodyFat] = useState<string>(() => {
     return existingRecord?.bodyFat ? String(existingRecord.bodyFat) : profile.bodyFat ? String(profile.bodyFat) : '';
   });
@@ -95,12 +99,16 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
     }
   };
 
-  const sanitizeNumber = (val: string, allowDecimal = true) => {
+  const sanitizeNumber = (val: string, allowDecimal = true, maxDecimals = 2) => {
     if (allowDecimal) {
       val = val.replace(/[^0-9.]/g, '');
       const parts = val.split('.');
       if (parts.length > 2) {
         val = parts[0] + '.' + parts.slice(1).join('');
+      }
+      const splitArr = val.split('.');
+      if (splitArr[1] !== undefined && splitArr[1].length > maxDecimals) {
+        return `${splitArr[0]}.${splitArr[1].slice(0, maxDecimals)}`;
       }
       return val;
     }
@@ -171,6 +179,7 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
     try {
       const result = await syncWeightFromProvider(weightSource, todayWeight);
       setTodayWeight(result.weight);
+      setTodayWeightStr(String(result.weight));
       if (result.bodyFat) {
         setTodayBodyFat(String(result.bodyFat));
       }
@@ -185,6 +194,7 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
 
   const handleApplySyncedData = (result: HealthSyncResult) => {
     setTodayWeight(result.weight);
+    setTodayWeightStr(String(result.weight));
     if (result.bodyFat) {
       setTodayBodyFat(String(result.bodyFat));
     }
@@ -468,65 +478,107 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
                 )}
 
                 {/* Compact Weight Stepper */}
-                <div className="p-2.5 rounded-2xl bg-purple-50/50 border border-purple-100 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setTodayWeight((w) => Number((Math.max(30, w - 0.1)).toFixed(1)))}
-                      className="w-8 h-8 rounded-xl bg-white shadow-xs border border-slate-200 text-slate-800 font-bold hover:bg-slate-100 flex items-center justify-center text-sm active:scale-95"
-                    >
-                      -
-                    </button>
-                    <div className="relative">
+                <div className="p-2.5 rounded-2xl bg-purple-50/50 border border-purple-100 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextW = Number((Math.max(30, todayWeight - 0.1)).toFixed(2));
+                          setTodayWeight(nextW);
+                          setTodayWeightStr(String(nextW));
+                        }}
+                        className="w-8 h-8 rounded-xl bg-white shadow-xs border border-slate-200 text-slate-800 font-bold hover:bg-slate-100 flex items-center justify-center text-sm active:scale-95"
+                        title="-0.1 kg"
+                      >
+                        -
+                      </button>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={todayWeightStr}
+                          onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                          onChange={(e) => {
+                            const val = sanitizeNumber(e.target.value, true, 2);
+                            setTodayWeightStr(val);
+                            setTodayWeight(val === '' ? 0 : parseFloat(val) || 0);
+                          }}
+                          className="w-28 text-center text-lg font-black text-slate-900 bg-white border border-purple-200 rounded-xl py-1 focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                          placeholder="61.35"
+                        />
+                        <span className="text-[10px] font-bold text-slate-400 absolute right-1.5 bottom-1.5">kg</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextW = Number((todayWeight + 0.1).toFixed(2));
+                          setTodayWeight(nextW);
+                          setTodayWeightStr(String(nextW));
+                        }}
+                        className="w-8 h-8 rounded-xl bg-white shadow-xs border border-slate-200 text-slate-800 font-bold hover:bg-slate-100 flex items-center justify-center text-sm active:scale-95"
+                        title="+0.1 kg"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <div className="text-right">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${currentBMICategory.bgColor} ${currentBMICategory.textColor}`}>
+                        BMI: {currentBMI} ({currentBMICategory.label})
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Body Fat Input Field (Optional, 2 Decimals) */}
+                  <div className="pt-1 border-t border-purple-100/70 flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                      <span>體脂率 (選填)：</span>
+                    </div>
+                    <div className="relative w-28">
                       <input
                         type="text"
                         inputMode="decimal"
-                        value={todayWeight || ''}
+                        placeholder="例如 28.50"
+                        value={todayBodyFat}
                         onKeyDown={(e) => handleNumericKeyDown(e, true)}
                         onChange={(e) => {
-                          const val = sanitizeNumber(e.target.value, true);
-                          setTodayWeight(val === '' ? 0 : parseFloat(val) || 0);
+                          const val = sanitizeNumber(e.target.value, true, 2);
+                          setTodayBodyFat(val);
                         }}
-                        className="w-24 text-center text-xl font-black text-slate-900 bg-white border border-purple-200 rounded-xl py-1 focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                        className="w-full text-center text-xs font-bold text-slate-800 bg-white border border-purple-200 rounded-lg py-1 px-2 pr-5 focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                       />
-                      <span className="text-[10px] font-bold text-slate-400 absolute right-1.5 bottom-1.5">kg</span>
+                      <span className="text-[10px] font-bold text-slate-400 absolute right-1.5 top-1.5">%</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setTodayWeight((w) => Number((w + 0.1).toFixed(1)))}
-                      className="w-8 h-8 rounded-xl bg-white shadow-xs border border-slate-200 text-slate-800 font-bold hover:bg-slate-100 flex items-center justify-center text-sm active:scale-95"
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  <div className="text-right">
-                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${currentBMICategory.bgColor} ${currentBMICategory.textColor}`}>
-                      BMI: {currentBMI} ({currentBMICategory.label})
-                    </span>
                   </div>
                 </div>
 
                 {/* Quick adjustments pills */}
                 <div className="flex items-center justify-between gap-1 text-[10px]">
                   {[
-                    { label: '-0.3kg', delta: -0.3 },
+                    { label: '-0.2kg', delta: -0.2 },
                     { label: '-0.1kg', delta: -0.1 },
+                    { label: '-0.05kg', delta: -0.05 },
                     { label: '與昨相同', delta: 0, reset: true },
+                    { label: '+0.05kg', delta: 0.05 },
                     { label: '+0.1kg', delta: 0.1 },
-                    { label: '+0.3kg', delta: 0.3 },
+                    { label: '+0.2kg', delta: 0.2 },
                   ].map((pill, pIdx) => (
                     <button
                       key={pIdx}
                       type="button"
                       onClick={() => {
                         if (pill.reset) {
-                          setTodayWeight(profile.weight || 65.0);
+                          const w = profile.weight || 65.0;
+                          setTodayWeight(w);
+                          setTodayWeightStr(String(w));
                         } else {
-                          setTodayWeight((w) => Number((w + pill.delta).toFixed(1)));
+                          const nextW = Number((Math.max(30, todayWeight + pill.delta)).toFixed(2));
+                          setTodayWeight(nextW);
+                          setTodayWeightStr(String(nextW));
                         }
                       }}
-                      className="flex-1 py-1 rounded-md bg-slate-50 hover:bg-purple-50 border border-slate-200 text-slate-600 hover:text-purple-700 font-medium text-center"
+                      className="flex-1 py-1 rounded-md bg-slate-50 hover:bg-purple-50 border border-slate-200 text-slate-600 hover:text-purple-700 font-medium text-center transition-colors"
                     >
                       {pill.label}
                     </button>
