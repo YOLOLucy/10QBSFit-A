@@ -22,7 +22,11 @@ import {
   ArrowRight,
   Terminal,
   Wifi,
-  FileText
+  FileText,
+  Sunrise,
+  Sun,
+  Moon,
+  Apple
 } from 'lucide-react';
 import { 
   DayMealPlan, 
@@ -970,34 +974,17 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                       className="w-full p-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden bg-white font-mono"
                     />
 
-                    <div className="flex items-center justify-between gap-2 flex-wrap text-[11px]">
-                      <span className="text-slate-400 font-medium">快捷範例填入：</span>
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                    {pastedGoogleResult && (
+                      <div className="flex justify-end text-[11px] pt-1">
                         <button
                           type="button"
-                          onClick={() => setPastedGoogleResult('Google 問問 AI 推薦：加爾平理論 7 天高蛋白增肌菜單，每餐 35g 蛋白質，搭配台農地瓜與挪威鮭魚、雞胸肉、深綠蔬菜，點心無糖希臘優格')}
-                          className="px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-emerald-400 text-slate-700 text-[10px] font-semibold"
+                          onClick={() => setPastedGoogleResult('')}
+                          className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[10px] font-bold transition-colors cursor-pointer"
                         >
-                          加爾平增肌範例
+                          清空貼上內容
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setPastedGoogleResult('Google 問問 AI 推薦：地中海抗氧化高 Omega-3 減脂菜單，包含鯖魚、酪梨、特級初榨橄欖油、板豆腐、花椰菜、藍莓燕麥')}
-                          className="px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-emerald-400 text-slate-700 text-[10px] font-semibold"
-                        >
-                          地中海抗炎範例
-                        </button>
-                        {pastedGoogleResult && (
-                          <button
-                            type="button"
-                            onClick={() => setPastedGoogleResult('')}
-                            className="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 text-[10px] font-bold"
-                          >
-                            清空
-                          </button>
-                        )}
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1204,14 +1191,19 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                       {/* 4 Meals */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                         {[
-                          { label: '早餐', meal: generatedResult.weeklyMealPlan[selectedPreviewDay].breakfast, bg: 'bg-amber-50/70 border-amber-200/70' },
-                          { label: '午餐', meal: generatedResult.weeklyMealPlan[selectedPreviewDay].lunch, bg: 'bg-emerald-50/70 border-emerald-200/70' },
-                          { label: '晚餐', meal: generatedResult.weeklyMealPlan[selectedPreviewDay].dinner, bg: 'bg-teal-50/70 border-teal-200/70' },
-                          { label: '點心', meal: generatedResult.weeklyMealPlan[selectedPreviewDay].snack, bg: 'bg-purple-50/70 border-purple-200/70' },
-                        ].map(({ label, meal, bg }) => (
+                          { label: '早餐', icon: Sunrise, meal: generatedResult.weeklyMealPlan[selectedPreviewDay].breakfast, bg: 'bg-amber-50/70 border-amber-200/70', iconBg: 'bg-amber-200/80 text-amber-900' },
+                          { label: '午餐', icon: Sun, meal: generatedResult.weeklyMealPlan[selectedPreviewDay].lunch, bg: 'bg-emerald-50/70 border-emerald-200/70', iconBg: 'bg-emerald-200/80 text-emerald-900' },
+                          { label: '晚餐', icon: Moon, meal: generatedResult.weeklyMealPlan[selectedPreviewDay].dinner, bg: 'bg-teal-50/70 border-teal-200/70', iconBg: 'bg-teal-200/80 text-teal-900' },
+                          { label: '點心', icon: Apple, meal: generatedResult.weeklyMealPlan[selectedPreviewDay].snack, bg: 'bg-purple-50/70 border-purple-200/70', iconBg: 'bg-purple-200/80 text-purple-900' },
+                        ].map(({ label, icon: MealIcon, meal, bg, iconBg }) => (
                           <div key={label} className={`p-3 rounded-xl border ${bg} space-y-1`}>
                             <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-slate-900">{label}：{meal.name}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`p-1 rounded-lg ${iconBg} inline-flex items-center justify-center`} title={label}>
+                                  <MealIcon className="w-3.5 h-3.5" />
+                                </span>
+                                <span className="font-extrabold text-slate-900">{meal.name}</span>
+                              </div>
                               <span className="text-[10px] text-slate-500 font-semibold">
                                 {meal.caloriesApprox} kcal | 蛋白 {meal.proteinApprox}g
                               </span>
