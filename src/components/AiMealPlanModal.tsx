@@ -26,7 +26,8 @@ import {
   Sunrise,
   Sun,
   Moon,
-  Apple
+  Apple,
+  ChefHat
 } from 'lucide-react';
 import { 
   DayMealPlan, 
@@ -1196,7 +1197,7 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                           { label: '晚餐', icon: Moon, meal: generatedResult.weeklyMealPlan[selectedPreviewDay].dinner, bg: 'bg-teal-50/70 border-teal-200/70', iconBg: 'bg-teal-200/80 text-teal-900' },
                           { label: '點心', icon: Apple, meal: generatedResult.weeklyMealPlan[selectedPreviewDay].snack, bg: 'bg-purple-50/70 border-purple-200/70', iconBg: 'bg-purple-200/80 text-purple-900' },
                         ].map(({ label, icon: MealIcon, meal, bg, iconBg }) => (
-                          <div key={label} className={`p-3 rounded-xl border ${bg} space-y-1`}>
+                          <div key={label} className={`p-3.5 rounded-xl border ${bg} space-y-2`}>
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
                                 <span className={`p-1 rounded-lg ${iconBg} inline-flex items-center justify-center`} title={label}>
@@ -1204,18 +1205,27 @@ export const AiMealPlanModal: React.FC<AiMealPlanModalProps> = ({
                                 </span>
                                 <span className="font-extrabold text-slate-900">{meal.name}</span>
                               </div>
-                              <span className="text-[10px] text-slate-500 font-semibold">
+                              <span className="text-[10px] text-slate-500 font-semibold bg-white/90 px-2 py-0.5 rounded border border-slate-200/60 shadow-2xs">
                                 {meal.caloriesApprox} kcal | 蛋白 {meal.proteinApprox}g
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 line-clamp-2">
-                              {meal.description}
-                            </p>
+
+                            {/* Cooking Method & Steps (Placed directly under the dish name) */}
+                            <div className="p-2.5 rounded-lg bg-white/90 border border-slate-200/70 shadow-2xs space-y-1">
+                              <div className="text-[10px] font-bold text-slate-800 flex items-center gap-1">
+                                <ChefHat className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>料理作法：</span>
+                              </div>
+                              <p className="text-[11px] text-slate-700 leading-relaxed pl-4">
+                                {meal.description || '依原型高蛋白原則料理。'}
+                              </p>
+                            </div>
+
                             {meal.tags && meal.tags.length > 0 && (
-                              <div className="flex flex-wrap gap-1 pt-1">
+                              <div className="flex flex-wrap gap-1 pt-0.5">
                                 {meal.tags.map((tag: string, tIdx: number) => (
                                   <span key={tIdx} className="text-[9px] bg-white/80 text-slate-600 px-1.5 py-0.2 rounded border border-slate-200">
-                                    {tag}
+                                    #{tag}
                                   </span>
                                 ))}
                               </div>

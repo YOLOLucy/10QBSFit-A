@@ -154,6 +154,11 @@ export async function fetchLiveWebNutritionInsights(
 }
 
 /**
+ * Regular expression matching ingredient quantities and common culinary/grocery units
+ */
+export const QTY_UNIT_REGEX = /\d+(?:[.\d\s\-~到至/]+)?\s*(?:g|kg|ml|l|公克|克|公斤|毫升|升|片|顆|包|小包|大包|條|中條|大條|罐|瓶|把|袋|大桶|桶|盒|打|份|盤|碗|杯|支|匙|湯匙|茶匙|瓣)(?:\s*[（(][^()（）]*[)）])?|各?適量/i;
+
+/**
  * Helper to categorize whole food ingredients into 5 standard categories
  */
 export function categorizeFoodItem(name: string): GroceryItem['category'] {
@@ -217,8 +222,534 @@ export function categorizeFoodItem(name: string): GroceryItem['category'] {
   return 'vegetable';
 }
 
-// Common quantity units regex matching both specific and compound units
-const QTY_UNIT_REGEX = /(\d+[\d\s\-~到至./]*(?:大罐|小罐|大盒|小盒|大包|小包|中條|大條|小條|大桶|小桶|片|包|顆|罐|打|盒|條|瓶|把|袋|g|kg|ml|支|份|盤|杯|碗|粒|葉|根|丁|滴)(?:\s*[(（][^()（）]*[)）])?|常備|各?適量(?:\s*[(（][^()（）]*[)）])?)/i;
+/**
+ * Normalizes an ingredient name into a canonical key and clean display name,
+ * allowing intelligent deduplication and merging across meals and grocery items.
+ */
+export function getCanonicalIngredientInfo(rawName: string): {
+  canonicalKey: string;
+  displayName: string;
+  defaultCategory: GroceryItem['category'];
+} {
+  let clean = rawName
+    .replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十:：]+/g, '')
+    .replace(/[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十:：]+$/g, '')
+    .trim();
+
+  // Strip trailing quantity if attached e.g. "去皮雞胸肉 200g" -> "去皮雞胸肉"
+  const qMatch = clean.match(QTY_UNIT_REGEX);
+  if (qMatch && qMatch.index !== undefined && qMatch.index > 0) {
+    clean = clean.slice(0, qMatch.index).trim();
+  }
+
+  // Remove generic commercial prefixes and culinary action modifiers
+  const base = clean
+    .replace(/^(?:冷凍\/冷藏|急凍|急速冷凍|生鮮|冷藏|冷凍|水洗|有機|無毒|特級|冷壓初榨|非基改|特選|純濃|無糖|放牧|動福|台農\d+號|挪威大西洋|挪威|台灣|精選|嚴選|低溫烘焙|即食|純黑|高纖|傳統|高鈣|熟凍|新鮮)\s*/gi, '')
+    .replace(/^(?:大|小|中|薄鹽|帶皮|去皮|去骨|精瘦|厚切|切塊|切片|水煮|舒肥|炙燒|香煎|烤|蒸|蒜炒|炒|乾煎|無調味)\s*/gi, '')
+    .replace(/[（(][^()（）]*[）)]/g, '')
+    .trim();
+
+  const lower = (base || clean).toLowerCase();
+
+  // 1. Protein Sources
+  if (lower.includes('雞胸') || lower.includes('雞里肌') || lower.includes('舒肥雞') || lower.includes('雞肉')) {
+    return { canonicalKey: '雞胸肉', displayName: '冷藏去皮大雞胸肉', defaultCategory: 'protein' };
+  }
+  if (lower.includes('雞腿') || lower.includes('去骨雞腿')) {
+    return { canonicalKey: '去骨雞腿肉', displayName: '生鮮去骨雞腿肉', defaultCategory: 'protein' };
+  }
+  if (lower.includes('蛋') || lower.includes('水煮蛋') || lower.includes('溫泉蛋') || lower.includes('溏心蛋') || lower.includes('蛋捲') || lower.includes('雙蛋')) {
+    return { canonicalKey: '雞蛋', displayName: '特選放牧動福大紅蛋', defaultCategory: 'protein' };
+  }
+  if (lower.includes('鮭魚') || lower.includes('鮭魚排') || lower.includes('鮭魚菲力')) {
+    return { canonicalKey: '鮭魚菲力', displayName: '挪威大西洋生鮮鮭魚排', defaultCategory: 'protein' };
+  }
+  if (lower.includes('鯖魚')) {
+    return { canonicalKey: '薄鹽鯖魚', displayName: '生鮮薄鹽大西洋鯖魚排', defaultCategory: 'protein' };
+  }
+  if (lower.includes('蝦') || lower.includes('蝦仁') || lower.includes('中卷') || lower.includes('透抽') || lower.includes('干貝') || lower.includes('海鮮')) {
+    return { canonicalKey: '白蝦仁中卷', displayName: '特選生鮮急凍白蝦仁/中卷', defaultCategory: 'protein' };
+  }
+  if (lower.includes('牛') || lower.includes('牛里肌') || lower.includes('牛排') || lower.includes('牛肉')) {
+    return { canonicalKey: '精瘦牛里肌', displayName: '頂級精瘦牛里肌肉片/排', defaultCategory: 'protein' };
+  }
+  if (lower.includes('豬') || lower.includes('豬里肌') || lower.includes('豬肉') || lower.includes('豬梅花')) {
+    return { canonicalKey: '精瘦豬里肌', displayName: '台灣生鮮精瘦豬里肌肉', defaultCategory: 'protein' };
+  }
+  if (lower.includes('豆腐') || lower.includes('板豆腐') || lower.includes('高鈣板豆腐') || lower.includes('嫩豆腐')) {
+    return { canonicalKey: '板豆腐', displayName: '非基改高纖高鈣板豆腐', defaultCategory: 'protein' };
+  }
+  if (lower.includes('毛豆') || lower.includes('毛豆仁')) {
+    return { canonicalKey: '毛豆仁', displayName: '急速冷凍原味毛豆仁', defaultCategory: 'protein' };
+  }
+  if (lower.includes('豆漿') || lower.includes('高纖豆漿')) {
+    return { canonicalKey: '無糖豆漿', displayName: '純濃無糖高纖濃豆漿', defaultCategory: 'protein' };
+  }
+  if (lower.includes('優格') || lower.includes('希臘優格') || lower.includes('酪蛋白')) {
+    return { canonicalKey: '希臘優格', displayName: '純濃無糖希臘優格 (零乳清)', defaultCategory: 'protein' };
+  }
+
+  // 2. Complex Carb Sources
+  if (lower.includes('地瓜') || lower.includes('黃金地瓜') || lower.includes('紅肉地瓜')) {
+    return { canonicalKey: '地瓜', displayName: '台農57號優質黃金地瓜', defaultCategory: 'carb' };
+  }
+  if (lower.includes('燕麥') || lower.includes('大燕麥片') || lower.includes('燕麥片')) {
+    return { canonicalKey: '大燕麥片', displayName: '無調味大燕麥片', defaultCategory: 'carb' };
+  }
+  if (lower.includes('糙米') || lower.includes('藜麥') || lower.includes('五穀米') || lower.includes('三色藜麥')) {
+    return { canonicalKey: '藜麥糙米', displayName: '有機三色藜麥與特選糙米', defaultCategory: 'carb' };
+  }
+  if (lower.includes('酸種') || lower.includes('黑麥麵包') || lower.includes('全麥麵包') || lower.includes('吐司') || lower.includes('sourdough')) {
+    return { canonicalKey: '全麥酸種麵包', displayName: '天然酵母全麥酸種麵包', defaultCategory: 'carb' };
+  }
+  if (lower.includes('南瓜')) {
+    return { canonicalKey: '栗子南瓜', displayName: '鮮採特選栗子南瓜', defaultCategory: 'carb' };
+  }
+  if (lower.includes('鷹嘴豆')) {
+    return { canonicalKey: '鷹嘴豆', displayName: '有機水煮高纖鷹嘴豆', defaultCategory: 'carb' };
+  }
+  if (lower.includes('馬鈴薯') || lower.includes('薯')) {
+    return { canonicalKey: '馬鈴薯', displayName: '生鮮優質馬鈴薯', defaultCategory: 'carb' };
+  }
+
+  // 3. Vegetable Fiber Sources
+  if (lower.includes('花椰菜') || lower.includes('青花菜') || lower.includes('西蘭花') || lower.includes('綠花椰')) {
+    return { canonicalKey: '青花菜', displayName: '鮮採深綠無毒花椰菜/青花菜', defaultCategory: 'vegetable' };
+  }
+  if (lower.includes('菠菜') || lower.includes('嫩葉菠菜') || lower.includes('白菜') || lower.includes('青江菜') || lower.includes('空心菜') || lower.includes('地瓜葉')) {
+    return { canonicalKey: '深綠蔬菜', displayName: '水洗嫩葉菠菜/奶油白菜', defaultCategory: 'vegetable' };
+  }
+  if (lower.includes('彩椒') || lower.includes('甜椒')) {
+    return { canonicalKey: '彩椒', displayName: '鮮採多色紅黃甜彩椒', defaultCategory: 'vegetable' };
+  }
+  if (lower.includes('櫛瓜') || lower.includes('節瓜')) {
+    return { canonicalKey: '櫛瓜', displayName: '鮮採生鮮綠櫛瓜/黃櫛瓜', defaultCategory: 'vegetable' };
+  }
+  if (lower.includes('番茄') || lower.includes('牛番茄') || lower.includes('聖女')) {
+    return { canonicalKey: '牛番茄', displayName: '鮮採生鮮優質牛番茄', defaultCategory: 'vegetable' };
+  }
+  if (lower.includes('菇') || lower.includes('蘑菇') || lower.includes('香菇') || lower.includes('鴻喜菇')) {
+    return { canonicalKey: '鮮菇', displayName: '綜合生鮮鮮香菇/蘑菇/鴻喜菇', defaultCategory: 'vegetable' };
+  }
+  if (lower.includes('洋蔥') || lower.includes('大蒜') || lower.includes('蒜') || lower.includes('薑')) {
+    return { canonicalKey: '辛香料', displayName: '常備生鮮辛香料 (洋蔥、大蒜)', defaultCategory: 'vegetable' };
+  }
+  if (lower.includes('沙拉') || lower.includes('生菜') || lower.includes('羽衣甘藍')) {
+    return { canonicalKey: '綜合生菜', displayName: '水洗綜合生菜沙拉葉/羽衣甘藍', defaultCategory: 'vegetable' };
+  }
+
+  // 4. Healthy Fats & Seasonings
+  if (lower.includes('橄欖油') || lower.includes('evoo') || lower.includes('初榨油')) {
+    return { canonicalKey: '橄欖油', displayName: '特級冷壓初榨橄欖油 (EVOO)', defaultCategory: 'fat_seasoning' };
+  }
+  if (lower.includes('酪梨') || lower.includes('哈斯酪梨')) {
+    return { canonicalKey: '酪梨', displayName: '新鮮頂級哈斯酪梨', defaultCategory: 'fat_seasoning' };
+  }
+  if (lower.includes('堅果') || lower.includes('核桃') || lower.includes('杏仁') || lower.includes('腰果')) {
+    return { canonicalKey: '綜合堅果', displayName: '低溫烘焙無調味綜合堅果 (核桃、杏仁)', defaultCategory: 'fat_seasoning' };
+  }
+  if (lower.includes('奇亞籽') || lower.includes('亞麻') || lower.includes('芝麻') || lower.includes('種籽')) {
+    return { canonicalKey: '奇亞籽種籽', displayName: '有機奇亞籽/綜合種籽', defaultCategory: 'fat_seasoning' };
+  }
+
+  // 5. Low-GI Fruits & Beverages
+  if (lower.includes('藍莓') || lower.includes('莓果') || lower.includes('草莓') || lower.includes('蔓越莓')) {
+    return { canonicalKey: '藍莓', displayName: '野生急凍藍莓/綜合莓果', defaultCategory: 'fruit_beverage' };
+  }
+  if (lower.includes('奇異果')) {
+    return { canonicalKey: '奇異果', displayName: '特選新鮮綠色奇異果', defaultCategory: 'fruit_beverage' };
+  }
+  if (lower.includes('芭樂') || lower.includes('蘋果') || lower.includes('香蕉') || lower.includes('水果')) {
+    return { canonicalKey: '低GI水果', displayName: '當季新鮮低 GI 水果 (芭樂/蘋果)', defaultCategory: 'fruit_beverage' };
+  }
+  if (lower.includes('咖啡') || lower.includes('美式')) {
+    return { canonicalKey: '黑咖啡', displayName: '無糖濾掛/美式純黑咖啡', defaultCategory: 'fruit_beverage' };
+  }
+  if (lower.includes('茶') || lower.includes('綠茶')) {
+    return { canonicalKey: '無糖綠茶', displayName: '無糖高山綠茶包', defaultCategory: 'fruit_beverage' };
+  }
+
+  return {
+    canonicalKey: base || clean,
+    displayName: clean,
+    defaultCategory: categorizeFoodItem(clean),
+  };
+}
+
+/**
+ * Extracts quantity numbers, units, and grams from a raw ingredient string.
+ */
+function parseIngredientQuantity(rawString: string): {
+  cleanName: string;
+  rawQuantity: string;
+  numericGrams?: number;
+  numericPieces?: number;
+  numericBoxes?: number;
+  numericPacks?: number;
+  numericBottles?: number;
+  unit?: string;
+} {
+  let cleanName = rawString.replace(/^[0-9.、\s\-*•]+/, '').trim();
+  let rawQuantity = '';
+
+  const qMatch = cleanName.match(QTY_UNIT_REGEX);
+  if (qMatch && qMatch.index !== undefined && qMatch.index > 0) {
+    rawQuantity = qMatch[0].trim();
+    cleanName = cleanName.slice(0, qMatch.index).trim();
+  }
+
+  let numericGrams: number | undefined;
+  let numericPieces: number | undefined;
+  let numericBoxes: number | undefined;
+  let numericPacks: number | undefined;
+  let numericBottles: number | undefined;
+  let unit: string | undefined;
+
+  const gMatch = rawQuantity.match(/(\d+(?:\.\d+)?)\s*(?:g|克)\b/i);
+  if (gMatch) {
+    numericGrams = parseFloat(gMatch[1]);
+    unit = 'g';
+  } else {
+    const kgMatch = rawQuantity.match(/(\d+(?:\.\d+)?)\s*(?:kg|公斤)\b/i);
+    if (kgMatch) {
+      numericGrams = parseFloat(kgMatch[1]) * 1000;
+      unit = 'g';
+    }
+  }
+
+  const pieceMatch = rawQuantity.match(/(\d+(?:\.\d+)?)\s*(?:顆|片|朵|條|根|個|粒)\b/i);
+  if (pieceMatch) {
+    numericPieces = parseFloat(pieceMatch[1]);
+    unit = pieceMatch[0].replace(/\d+(?:\.\d+)?\s*/, '').trim();
+  }
+
+  const boxMatch = rawQuantity.match(/(\d+(?:\.\d+)?)\s*(?:盒|大盒|小盒)\b/i);
+  if (boxMatch) {
+    numericBoxes = parseFloat(boxMatch[1]);
+    unit = '盒';
+  }
+
+  const packMatch = rawQuantity.match(/(\d+(?:\.\d+)?)\s*(?:包|大包|小包|袋)\b/i);
+  if (packMatch) {
+    numericPacks = parseFloat(packMatch[1]);
+    unit = '包';
+  }
+
+  const bottleMatch = rawQuantity.match(/(\d+(?:\.\d+)?)\s*(?:瓶|罐|大桶)\b/i);
+  if (bottleMatch) {
+    numericBottles = parseFloat(bottleMatch[1]);
+    unit = '瓶';
+  }
+
+  return {
+    cleanName: cleanName || rawString,
+    rawQuantity,
+    numericGrams,
+    numericPieces,
+    numericBoxes,
+    numericPacks,
+    numericBottles,
+    unit,
+  };
+}
+
+/**
+ * Master ingredient consolidator:
+ * 1. Analyzes all "主要食材" across the 7-day meal plan.
+ * 2. Correlates each ingredient with its exact meal slots (e.g. 週一午餐, 週三晚餐).
+ * 3. Intelligently MERGES identical / duplicate ingredients into a single GroceryItem row,
+ *    summing up quantities and merging meal usages.
+ * 4. Ensures 100% synchronization between meal ingredients and the grocery checklist.
+ */
+export function consolidateGroceryAndMealIngredients(
+  parsedGroceries: GroceryItem[],
+  weeklyMealPlan: DayMealPlan[],
+  servings: number
+): { groceryList: GroceryItem[]; weeklyMealPlan: DayMealPlan[] } {
+  const sMultiplier = Math.max(1, servings);
+
+  // Meal chronological order helper
+  const mealSlotOrder = ['早餐', '午餐', '晚餐', '點心'];
+  const dayOrder = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+  const getMealSortScore = (usageStr: string) => {
+    let score = 0;
+    dayOrder.forEach((d, dIdx) => {
+      if (usageStr.includes(d)) score += dIdx * 10;
+    });
+    mealSlotOrder.forEach((s, sIdx) => {
+      if (usageStr.includes(s)) score += sIdx;
+    });
+    return score;
+  };
+
+  interface ConsolidatedEntry {
+    canonicalKey: string;
+    displayName: string;
+    category: GroceryItem['category'];
+    occurrences: {
+      mealLabel: string;
+      rawIngredient: string;
+      grams?: number;
+      pieces?: number;
+      boxes?: number;
+      packs?: number;
+      bottles?: number;
+      unit?: string;
+    }[];
+    shoppingQuantities: string[];
+    notes: Set<string>;
+  }
+
+  const ingredientMap = new Map<string, ConsolidatedEntry>();
+
+  // 1. Scan weeklyMealPlan and register all "主要食材" with their meal slot
+  const mealSlotKeys: Array<{ key: 'breakfast' | 'lunch' | 'dinner' | 'snack'; label: string }> = [
+    { key: 'breakfast', label: '早餐' },
+    { key: 'lunch', label: '午餐' },
+    { key: 'dinner', label: '晚餐' },
+    { key: 'snack', label: '點心' },
+  ];
+
+  weeklyMealPlan.forEach((dayPlan) => {
+    mealSlotKeys.forEach(({ key, label }) => {
+      const meal = dayPlan[key];
+      if (!meal) return;
+
+      const mealLabel = `${dayPlan.dayOfWeek}${label}`;
+      const rawIngredients = resolveSlotIngredients(meal.ingredients, meal.name, meal.description);
+
+      const cleanedMealIngredients: string[] = [];
+
+      rawIngredients.forEach((rawIng) => {
+        const parsed = parseIngredientQuantity(rawIng);
+        const { canonicalKey, displayName, defaultCategory } = getCanonicalIngredientInfo(parsed.cleanName);
+
+        if (isInvalidGroceryItemName(canonicalKey) || canonicalKey.length < 2) return;
+
+        cleanedMealIngredients.push(rawIng);
+
+        if (!ingredientMap.has(canonicalKey)) {
+          ingredientMap.set(canonicalKey, {
+            canonicalKey,
+            displayName,
+            category: defaultCategory,
+            occurrences: [],
+            shoppingQuantities: [],
+            notes: new Set<string>(),
+          });
+        }
+
+        const entry = ingredientMap.get(canonicalKey)!;
+        // Check if this meal slot already added for this ingredient
+        const existingOcc = entry.occurrences.find((o) => o.mealLabel === mealLabel);
+        if (!existingOcc) {
+          entry.occurrences.push({
+            mealLabel,
+            rawIngredient: rawIng,
+            grams: parsed.numericGrams,
+            pieces: parsed.numericPieces,
+            boxes: parsed.numericBoxes,
+            packs: parsed.numericPacks,
+            bottles: parsed.numericBottles,
+            unit: parsed.unit,
+          });
+        }
+      });
+
+      // Update meal ingredients array to reflect clean list
+      meal.ingredients = cleanedMealIngredients.length > 0 ? cleanedMealIngredients : [meal.name];
+    });
+  });
+
+  // 2. Merge with parsedGroceries (items parsed from Table 1 / category sections)
+  parsedGroceries.forEach((gItem) => {
+    if (isInvalidGroceryItemName(gItem.name)) return;
+
+    const { canonicalKey, displayName, defaultCategory } = getCanonicalIngredientInfo(gItem.name);
+    if (!canonicalKey || canonicalKey.length < 2) return;
+
+    if (!ingredientMap.has(canonicalKey)) {
+      ingredientMap.set(canonicalKey, {
+        canonicalKey,
+        displayName: gItem.name.length >= displayName.length ? gItem.name : displayName,
+        category: gItem.category || defaultCategory,
+        occurrences: [],
+        shoppingQuantities: [],
+        notes: new Set<string>(),
+      });
+    }
+
+    const entry = ingredientMap.get(canonicalKey)!;
+    if (gItem.quantity && !entry.shoppingQuantities.includes(gItem.quantity)) {
+      entry.shoppingQuantities.push(gItem.quantity);
+    }
+    if (gItem.notes && gItem.notes.length > 3 && !gItem.notes.includes('超市食材採買')) {
+      entry.notes.add(gItem.notes);
+    }
+    if (gItem.mealUsage) {
+      gItem.mealUsage.forEach((u) => {
+        if (!entry.occurrences.some((o) => o.mealLabel === u)) {
+          entry.occurrences.push({
+            mealLabel: u,
+            rawIngredient: gItem.name,
+          });
+        }
+      });
+    }
+  });
+
+  // 3. Build unified, merged GroceryItem list
+  const consolidatedGroceryList: GroceryItem[] = [];
+
+  ingredientMap.forEach((entry, canonicalKey) => {
+    // Sort and deduplicate meal usages
+    const mealUsages = Array.from(new Set(entry.occurrences.map((o) => o.mealLabel)))
+      .sort((a, b) => getMealSortScore(a) - getMealSortScore(b));
+
+    const mealCount = mealUsages.length || 1;
+
+    // Calculate consolidated quantity
+    let finalQuantityStr = '';
+
+    // Check if we have numeric grams from meal ingredients
+    const totalGramsFromMeals = entry.occurrences.reduce((sum, o) => sum + (o.grams || 0), 0);
+    const totalPiecesFromMeals = entry.occurrences.reduce((sum, o) => sum + (o.pieces || 0), 0);
+    const totalBoxesFromMeals = entry.occurrences.reduce((sum, o) => sum + (o.boxes || 0), 0);
+    const totalPacksFromMeals = entry.occurrences.reduce((sum, o) => sum + (o.packs || 0), 0);
+    const totalBottlesFromMeals = entry.occurrences.reduce((sum, o) => sum + (o.bottles || 0), 0);
+
+    if (entry.shoppingQuantities.length > 0) {
+      // If Table 1 provided explicit shopping quantities, merge them cleanly
+      const primaryQty = entry.shoppingQuantities[0];
+      if (primaryQty.includes('kg') || primaryQty.includes('g') || primaryQty.includes('顆') || primaryQty.includes('盒') || primaryQty.includes('包') || primaryQty.includes('片') || primaryQty.includes('條') || primaryQty.includes('瓶')) {
+        finalQuantityStr = primaryQty;
+      } else {
+        finalQuantityStr = `${primaryQty}`;
+      }
+    } else if (totalGramsFromMeals > 0) {
+      const scaledGrams = Math.round(totalGramsFromMeals * sMultiplier);
+      if (scaledGrams >= 1000) {
+        finalQuantityStr = `${(scaledGrams / 1000).toFixed(1)} kg (共 ${mealCount} 餐備料)`;
+      } else {
+        finalQuantityStr = `${scaledGrams} g (共 ${mealCount} 餐備料)`;
+      }
+    } else if (totalPiecesFromMeals > 0) {
+      const scaledPieces = Math.round(totalPiecesFromMeals * sMultiplier);
+      finalQuantityStr = `${scaledPieces} 顆 (共 ${mealCount} 餐使用)`;
+    } else if (totalBoxesFromMeals > 0) {
+      const scaledBoxes = Math.round(totalBoxesFromMeals * sMultiplier);
+      finalQuantityStr = `${scaledBoxes} 盒 (共 ${mealCount} 餐使用)`;
+    } else if (totalPacksFromMeals > 0) {
+      const scaledPacks = Math.round(totalPacksFromMeals * sMultiplier);
+      finalQuantityStr = `${scaledPacks} 包 (共 ${mealCount} 餐使用)`;
+    } else if (totalBottlesFromMeals > 0) {
+      finalQuantityStr = `${Math.max(1, totalBottlesFromMeals)} 瓶 (常備調味使用)`;
+    } else {
+      finalQuantityStr = `${1 * sMultiplier} 份 (共 ${mealCount} 餐使用)`;
+    }
+
+    // Compose consolidated note
+    let combinedNote = '';
+    if (entry.notes.size > 0) {
+      combinedNote = Array.from(entry.notes).join('；');
+    } else {
+      combinedNote = `依 7 天菜單（${mealUsages.slice(0, 3).join('、')}${mealUsages.length > 3 ? ` 等共 ${mealUsages.length} 餐` : ''}）主要食材自動整合備料 (${servings}人份)`;
+    }
+
+    consolidatedGroceryList.push({
+      id: `mrg_g_${Date.now()}_${consolidatedGroceryList.length}_${Math.floor(Math.random() * 10000)}`,
+      name: entry.displayName,
+      quantity: finalQuantityStr,
+      category: entry.category,
+      checked: false,
+      notes: combinedNote,
+      mealUsage: mealUsages.length > 0 ? mealUsages : ['週一至週日 7 天備餐使用'],
+    });
+  });
+
+  // Sort by category order: protein -> vegetable -> carb -> fat_seasoning -> fruit_beverage
+  const categoryOrder: Record<GroceryItem['category'], number> = {
+    protein: 1,
+    vegetable: 2,
+    carb: 3,
+    fat_seasoning: 4,
+    fruit_beverage: 5,
+  };
+
+  consolidatedGroceryList.sort((a, b) => {
+    const catDiff = (categoryOrder[a.category] || 99) - (categoryOrder[b.category] || 99);
+    if (catDiff !== 0) return catDiff;
+    return (b.mealUsage?.length || 0) - (a.mealUsage?.length || 0);
+  });
+
+  return {
+    groceryList: consolidatedGroceryList,
+    weeklyMealPlan,
+  };
+}
+
+
+/**
+ * Checks if a string is a category header, section title, table column header, or invalid grocery item name.
+ * Strictly prevents strings like "一、 蛋白質專區", "二、 蔬菜纖維區", "三、 優質低GI碳水", "四、 好油脂與調味", "五、 低GI水果與飲品", etc. from becoming grocery items.
+ */
+export function isInvalidGroceryItemName(rawName: string): boolean {
+  if (!rawName) return true;
+
+  // Clean numbers, Chinese numbers, symbols, bullets, brackets, colons, spaces
+  const clean = rawName
+    .replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十:：]+/g, '')
+    .replace(/[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十:：]+$/g, '')
+    .trim()
+    .toLowerCase();
+
+  if (clean.length < 2) return true;
+
+  // Category and table header keywords
+  const invalidKeywords = [
+    '蛋白質專區', '蛋白質區', '蛋白質類', '蛋白質',
+    '蔬菜纖維區', '蔬菜纖維', '蔬菜區', '蔬菜類', '蔬菜',
+    '優質低gi碳水', '優質低碳水', '優質碳水', '低gi碳水', '低gi碳水化合物', '低碳水', '碳水化合物', '主食澱粉', '主食區', '澱粉區', '碳水區', '碳水類', '優質低 gi 碳水', '優質低gi碳水專區',
+    '好油脂與調味', '好油脂與調味料', '好油脂', '油脂與調味', '油脂調味', '油脂區', '調味區', '調味料專區', '好油脂專區',
+    '低gi水果與飲品', '低gi水果', '水果與飲品', '水果飲品', '低gi水果飲品', '水果區', '飲品區', '低 gi 水果與飲品', '低gi水果專區',
+    '食材分類', '食材名稱', '建議採買份量', '建議採買份量規格', '營養亮點與備註', '備註', '份量規格', '主要食材搭配作法',
+    '採買清單', '採購清單', '一週採買', '一週採購', '超市食材', '食材準備', '原型食物',
+    '建議菜單', '7天菜單', '七天菜單', '菜單規劃', '輸出結構', '存檔規範', '核心指令', '前頁生理', '個人偏好',
+    '菜色名稱', '菜名', '餐點名稱', '料理名稱', '料理作法', '作法', '做法', '備餐步驟',
+    '主要食材', '預估蛋白質', '預估熱量', '餐別', '星期'
+  ];
+
+  const cleanNoSpaces = clean.replace(/\s+/g, '');
+  if (invalidKeywords.some((k) => cleanNoSpaces === k.replace(/\s+/g, '') || (cleanNoSpaces.startsWith(k.replace(/\s+/g, '')) && cleanNoSpaces.length <= k.length + 3))) {
+    return true;
+  }
+
+  // Regex patterns
+  if (
+    /^(?:第?[一二三四五六七八九十\d]+[、. ]\s*)?(?:蛋白質|蔬菜|纖維|碳水|主食|澱粉|油脂|好油|調味|水果|飲品|飲料|食材|採買|採購|菜單|食譜|專區)[專區類別項表\s]*$/i.test(clean) ||
+    /^(?:蛋白質專區|蔬菜纖維區|優質低\s*GI\s*碳水|好油脂與調味|低\s*GI\s*水果與飲品)/i.test(clean) ||
+    /^(?:一|二|三|四|五|六|七|八|九|十|\d+)[、. ]\s*(?:蛋白質|蔬菜|碳水|油脂|水果|飲品|食材|菜單|採買)/i.test(rawName.trim())
+  ) {
+    return true;
+  }
+
+  if (
+    clean.includes('專區') ||
+    clean.includes('採買清單') ||
+    clean.includes('採購清單') ||
+    clean.includes('建議菜單') ||
+    clean.includes('蔬菜纖維區') ||
+    clean.includes('優質低gi碳水') ||
+    clean.includes('好油脂與調味') ||
+    clean.includes('低gi水果與飲品') ||
+    clean.includes('低 gi 水果') ||
+    clean.includes('低 gi 碳水')
+  ) {
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Normalizes and splits raw text into meaningful logical lines / tokens,
@@ -248,7 +779,9 @@ function normalizeRawInputLines(rawText: string): string[] {
       .replace(/([^\n])\s*(表[一二三四1-4][、：:][^\n]*)/gi, '$1\n$2')
       .replace(/([^\n])\s*(【[^】]*(?:採買|採購|食材|清單|菜單|食譜)[^】]*】)/gi, '$1\n$2')
       // Ensure Table 1 category headers start on new line
-      .replace(/([^\n])\s*(蛋白質專區|蔬菜纖維區|優質低\s*GI\s*碳水|好油脂與調味|低\s*GI\s*水果與飲品|蛋白質區|蔬菜纖維|優質碳水|低GI碳水|好油脂|低GI水果|水果飲品)/gi, '$1\n$2')
+      .replace(/([^\n])\s*(【?(?:[一二三四五\d]+[、. ]\s*)?(?:蛋白質專區|蔬菜纖維區|優質低\s*GI\s*碳水(?:專區)?|好油脂與調味(?:專區)?|低\s*GI\s*水果與飲品(?:專區)?|蛋白質區|蔬菜纖維|優質碳水|低GI碳水|好油脂|低GI水果|水果飲品)】?)/gi, '$1\n$2')
+      // Ensure numbered grocery items start on new line
+      .replace(/([^\n])\s*(\d+[.、]\s*[\u4e00-\u9fa5a-zA-Z])/gi, '$1\n$2')
       // Ensure Days start on new line
       .replace(/([^\n])\s*(週[一二三四五六日天]|星期[一二三四五六日天]|禮拜[一二三四五六日天]|Day\s*[1-7]|第[一二三四五六七]天)/gi, '$1\n$2')
       // Ensure meal slots (午餐, 晚餐, 點心) after calories/protein metrics start on new lines
@@ -265,6 +798,176 @@ function normalizeRawInputLines(rawText: string): string[] {
   }
 
   return result;
+}
+
+/**
+ * Accurately extracts dish name, cooking method/recipe directly from text after '作法:' / '做法:',
+ * and structured ingredients from '主要食材:'.
+ */
+export function extractMealDishAndRecipe(
+  primaryText: string,
+  secondaryText?: string,
+  fallbackSlotName: string = '原型健康高蛋白餐點'
+): {
+  name: string;
+  instruction: string;
+  ingredients: string[];
+} {
+  const combined = secondaryText ? `${primaryText} ||| ${secondaryText}` : primaryText;
+
+  // Clean metrics and metric brackets for textual analysis
+  const textWithoutMetrics = combined
+    .replace(/[（(\[][^()（）\[\]]*(?:蛋白質|蛋白|熱量|kcal|大卡|卡路里|protein|calories)[^()（）\[\]]*[）)\]]/gi, ' ')
+    .replace(/(?:預估)?(?:蛋白質|蛋白|protein)[：:\s=~約]*\d+(?:\.\d+)?\s*(?:g|克)?/gi, ' ')
+    .replace(/(?:預估)?(?:熱量|卡路里|calories|cal|kcal)[：:\s=~約]*\d+(?:\.\d+)?\s*(?:kcal|大卡|卡|cal)?/gi, ' ')
+    .replace(/\d+(?:\.\d+)?\s*(?:g|克)\s*(?:的)?(?:蛋白質|蛋白)/gi, ' ')
+    .replace(/\d+(?:\.\d+)?\s*(?:kcal|大卡|卡|cal)/gi, ' ')
+    .replace(/\b\d+\s*g\s*\d+\s*kcal\b/gi, ' ')
+    .replace(/\b\d+\s*g\s*\d+\b/gi, ' ')
+    .replace(/(\d+(?:\.\d+)?)\s*(?:g|克)\s*(\d+(?:\.\d+)?)\s*(?:kcal|大卡|卡|cal)?\s*$/i, ' ')
+    .trim();
+
+  // 1. Extract Dish Name (菜色名稱)
+  // Priority 1: Explicit pattern matching for "菜色名稱", "菜名", "餐點名稱", "料理名稱", "品項名稱", "菜色", "品名"
+  let dishName = '';
+  const explicitDishNameRegex = /(?:菜色名稱|菜色|菜名|餐點名稱|餐點品名|料理名稱|品項名稱|品名)[：:\s]+([\s\S]+?)(?=(?:主要食材|食材準備|食材|料理作法|備餐步驟|主要食材搭配作法|搭配作法|料理步驟|作法|做法|步驟|預估蛋白質|蛋白質|預估熱量|熱量|營養備註|備註|$|[（(\[][^()（）\[\]]*(?:蛋白質|熱量|kcal|大卡)))/i;
+  const explicitMatch = textWithoutMetrics.match(explicitDishNameRegex);
+
+  if (explicitMatch && explicitMatch[1].trim().length > 0) {
+    dishName = explicitMatch[1].trim();
+  } else {
+    // Priority 2: Extract before any ingredient/recipe prefix in primaryText
+    let candidate = primaryText.trim();
+    if (candidate.includes('|||')) {
+      candidate = candidate.split('|||')[0].trim();
+    }
+
+    const beforePrefix = candidate.split(/(?:主要食材|食材準備|食材|料理作法|備餐步驟|主要食材搭配作法|搭配作法|料理步驟|作法|做法|步驟)[：:]/i)[0].trim();
+    if (beforePrefix.length > 0) {
+      dishName = beforePrefix;
+    } else {
+      dishName = candidate;
+    }
+  }
+
+  // Clean dishName: remove day prefixes, meal slot prefixes, Markdown formatting, bullet points, and leftover label prefixes
+  dishName = dishName
+    .replace(/^(?:週[一二三四五六日天]|星期[一二三四五六日天]|禮拜[一二三四五六日天]|周[一二三四五六日天]|Day\s*[1-7]|第[一二三四五六七]天)[\s:：]*/i, '')
+    .replace(/^(?:早餐|早點|午餐|中餐|晚餐|午後點心|點心|加餐|下午茶|運動後|運動後補給|breakfast|lunch|dinner|snack)[\s:：]*/i, '')
+    .replace(/^[#*\-•\s\d.、【】\[\]()（）*_~`]+/g, '')
+    .replace(/^(?:菜色名稱|菜色|菜名|餐點名稱|餐點品名|料理名稱|品項名稱|品名)[：:\s]*/i, '')
+    .replace(/[：:\-–—•*\s|/,、，。]+$/, '')
+    .replace(/^[（(\[]|[）)\]]$/g, '')
+    .replace(/^[*_`~]+|[*_`~]+$/g, '')
+    .trim();
+
+  // If dishName is empty, just a meal slot name, or placeholder, use fallbackSlotName
+  if (!dishName || dishName.length < 2 || dishName.match(/^(?:早餐|午餐|晚餐|點心|早點|晚點|breakfast|lunch|dinner|snack)$/i)) {
+    dishName = fallbackSlotName;
+  }
+
+  // 2. Extract Instruction (料理作法) directly after 作法: / 做法: / 料理作法: / 備餐步驟:
+  let instruction = '';
+  const methodRegex = /(?:料理作法|備餐步驟|主要食材搭配作法|搭配作法|料理步驟|作法|做法|步驟)[：:\s]+([\s\S]+?)(?=(?:主要食材|食材準備|食材|預估蛋白質|蛋白質|預估熱量|熱量|營養備註|備註|$|[（(\[][^()（）\[\]]*(?:蛋白質|熱量|kcal|大卡)))/i;
+  const methodMatch = textWithoutMetrics.match(methodRegex);
+
+  if (methodMatch && methodMatch[1].trim().length > 0) {
+    instruction = methodMatch[1].trim();
+  } else if (secondaryText && secondaryText.trim().length > 0) {
+    // If there's a secondary text (like Table column 4) that didn't have the literal prefix "作法:"
+    let cleanSec = secondaryText
+      .replace(/[（(\[][^()（）\[\]]*(?:蛋白質|蛋白|熱量|kcal|大卡|卡路里|protein|calories)[^()（）\[\]]*[）)\]]/gi, ' ')
+      .replace(/^(?:主要食材|食材準備|食材)[：:\s]+[\s\S]+?(?=(?:作法|做法|步驟|料理作法|$))/i, '')
+      .replace(/^(?:菜色名稱|菜色|菜名|餐點名稱|料理名稱)[：:\s]+[\s\S]+?(?=(?:作法|做法|步驟|料理作法|主要食材|$))/i, '')
+      .trim();
+    instruction = cleanSec || secondaryText.trim();
+  } else {
+    // If single text, check if there was a colon or separator
+    const splitByColon = textWithoutMetrics.split(/[：:]/);
+    if (splitByColon.length > 2) {
+      instruction = splitByColon.slice(2).join('：').trim();
+    } else if (splitByColon.length === 2 && !splitByColon[0].match(/^(?:早餐|午餐|晚餐|點心|早點|晚點|breakfast|lunch|dinner|snack|菜色名稱|菜色|菜名|餐點名稱)$/i)) {
+      instruction = splitByColon[1].trim();
+    } else {
+      instruction = primaryText.trim();
+    }
+  }
+
+  // Clean instruction: remove trailing/leading punctuation, quotes, brackets
+  instruction = instruction
+    .replace(/^(?:菜色名稱|菜色|菜名|餐點名稱|料理名稱)[：:\s]+[^：:\n]{1,50}[：:\n]*/i, '')
+    .replace(/^[：:\-–—•*\s|/,、，。]+/, '')
+    .replace(/[：:\-–—•*\s|/,、，。]+$/, '')
+    .replace(/^[（(\[]|[）)\]]$/g, '')
+    .replace(/^[*_`~]+|[*_`~]+$/g, '')
+    .trim();
+
+  // 3. Extract Ingredients (主要食材)
+  let ingredients: string[] = [];
+  const ingRegex = /(?:主要食材|食材準備|食材)[：:\s]+([\s\S]+?)(?=(?:料理作法|備餐步驟|主要食材搭配作法|搭配作法|料理步驟|作法|做法|步驟|預估蛋白質|蛋白質|預估熱量|熱量|營養備註|備註|$|[（(\[][^()（）\[\]]*(?:蛋白質|熱量|kcal|大卡)))/i;
+  const ingMatch = textWithoutMetrics.match(ingRegex);
+
+  if (ingMatch && ingMatch[1].trim().length > 0) {
+    ingredients = ingMatch[1]
+      .split(/[+＋、,，;；/、\n]/)
+      .map((i) => i.trim().replace(/^[（(]|[）)]$/g, '').replace(/^[#*\-•\s\d.、]+/, ''))
+      .filter((i) => i.length >= 2 && !i.includes('作法') && !i.includes('熱量') && !i.includes('蛋白質') && !i.includes('菜色名稱'));
+  }
+
+  // If instruction is empty or equal to dishName, generate standard prototype instruction
+  if (!instruction || instruction === dishName) {
+    if (ingredients.length > 0) {
+      instruction = `主要搭配 ${ingredients.join('、')}，以少油少鹽低GI原型方式烹調。`;
+    } else {
+      instruction = `${dishName}，依高蛋白極簡備餐原則料理。`;
+    }
+  }
+
+  // If ingredients not found, extract from dishName or instruction if formatted with +
+  if (ingredients.length === 0) {
+    if (instruction.includes('+') || (instruction.includes('、') && !instruction.includes('作法') && !instruction.includes('備餐') && instruction.length < 35)) {
+      ingredients = instruction
+        .split(/[+＋、,，]/)
+        .map((i) => i.trim().replace(/^[（(]|[）)]$/g, ''))
+        .filter((i) => i.length >= 2 && !i.includes('作法') && !i.includes('料理') && !i.includes('備餐'));
+    }
+  }
+
+  return {
+    name: dishName,
+    instruction,
+    ingredients,
+  };
+}
+
+/**
+ * Safely resolves ingredient list for a meal slot without turning cooking sentences into ingredients
+ */
+function resolveSlotIngredients(
+  parsedIngredients?: string[],
+  dishName: string = '',
+  desc: string = ''
+): string[] {
+  if (parsedIngredients && parsedIngredients.length > 0) {
+    return parsedIngredients;
+  }
+
+  if (desc.includes('+')) {
+    const list = desc.split('+').map((i) => i.trim().replace(/^[（(]|[）)]$/g, '')).filter((i) => i.length >= 2);
+    if (list.length > 0) return list;
+  }
+
+  const subParts = dishName
+    .replace(/(?:佐|配|搭|與|和|及)/g, '+')
+    .split(/[+＋、]/)
+    .map((i) => i.trim().replace(/^[0-9.、\s\-*•]+/, ''))
+    .filter((i) => i.length >= 2 && !i.includes('餐') && !i.includes('便當') && !i.includes('盤') && !i.includes('碗'));
+
+  if (subParts.length >= 2) {
+    return subParts;
+  }
+
+  return [dishName];
 }
 
 /**
@@ -333,6 +1036,7 @@ export function parseGoogleSearchMealText(
 
   let currentCategory: GroceryItem['category'] | null = null;
   let currentDay: string | null = null;
+  let currentSlotKey: 'breakfast' | 'lunch' | 'dinner' | 'snack' | null = null;
 
   for (const rawLine of lines) {
     const lowerLine = rawLine.toLowerCase();
@@ -355,7 +1059,7 @@ export function parseGoogleSearchMealText(
 
     // 2.A. Check for compact table row format with category prefix (Table 1 plain-text copy)
     // e.g. "蛋白質專區冷凍/冷藏鮭魚菲力3 片 (約 450g)富含 Omega-3 脂肪酸、抗發炎與優質蛋白質"
-    const catRowMatch = rawLine.match(/^(蛋白質專區|蔬菜纖維區|優質低\s*GI\s*碳水|好油脂與調味|低\s*GI\s*水果與飲品|蛋白質區|蔬菜纖維|優質碳水|低GI碳水|好油脂|低GI水果|水果飲品|蛋白質|蔬菜|好油)(.*)$/i);
+    const catRowMatch = rawLine.match(/^(?:[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]+)?(蛋白質專區|蔬菜纖維區|優質低\s*GI\s*碳水|好油脂與調味|低\s*GI\s*水果與飲品|蛋白質區|蔬菜纖維|優質碳水|低GI碳水|好油脂|低GI水果|水果飲品|蛋白質|蔬菜|好油)(.+)$/i);
     if (catRowMatch && catRowMatch[2].trim().length > 1) {
       const catPrefix = catRowMatch[1];
       const remainder = catRowMatch[2].trim();
@@ -377,7 +1081,7 @@ export function parseGoogleSearchMealText(
         name = name.replace(/^[0-9.、\s\-*•]+/, '').trim();
         note = note.replace(/^[（(]|[）)]$/g, '').trim();
 
-        if (name.length >= 2 && !seenItemNames.has(name)) {
+        if (name.length >= 2 && !isInvalidGroceryItemName(name) && !seenItemNames.has(name)) {
           seenItemNames.add(name);
           extractedGroceryItems.push({
             id: `c_tbl_${Date.now()}_${extractedGroceryItems.length}_${Math.floor(Math.random()*1000)}`,
@@ -409,7 +1113,8 @@ export function parseGoogleSearchMealText(
         (headerCheck.includes('食材') && (headerCheck.includes('份量') || headerCheck.includes('名稱'))) ||
         (headerCheck.includes('餐別') && headerCheck.includes('菜色')) ||
         (headerCheck.includes('星期') && headerCheck.includes('熱量')) ||
-        headerCheck.includes('欄位')
+        headerCheck.includes('欄位') ||
+        cells.every((c) => isInvalidGroceryItemName(c))
       ) {
         continue;
       }
@@ -516,10 +1221,17 @@ export function parseGoogleSearchMealText(
           contentCells.push(c);
         }
 
-        let dishName = contentCells[0] || '原型高蛋白餐';
-        let dishDesc = contentCells[1] || contentCells[0] || dishName;
+        // Extract dish name, direct cooking method from 作法:, and ingredients
+        const dishNameCandidate = contentCells[0] || '高蛋白原型餐';
+        const descCandidate = contentCells.slice(1).join(' ||| ');
 
-        // If metrics were embedded inside dish description cell, extract them
+        const { name, instruction, ingredients } = extractMealDishAndRecipe(
+          dishNameCandidate,
+          descCandidate,
+          '高蛋白原型餐'
+        );
+
+        // If metrics were embedded inside text cells, extract them
         if (!protVal || !calVal) {
           const rowText = contentCells.join(' ');
           const expP = rowText.match(/(?:預估蛋白質|蛋白質含量|蛋白質|蛋白|protein)[：:\s=~約]*(\d+(?:\.\d+)?)\s*(?:g|克)?/i);
@@ -528,22 +1240,13 @@ export function parseGoogleSearchMealText(
           if (!calVal && expC) calVal = Math.round(parseFloat(expC[1]));
         }
 
-        // Clean dish name / description
-        dishName = dishName.replace(/[（(\[][^()（）\[\]]*(?:蛋白質|熱量|kcal|大卡)[^()（）\[\]]*[）)\]]\s*$/i, '').trim();
-        dishDesc = dishDesc.replace(/[（(\[][^()（）\[\]]*(?:蛋白質|熱量|kcal|大卡)[^()（）\[\]]*[）)\]]\s*$/i, '').trim();
-
-        // Extract ingredients from dishDesc
-        const ings = dishDesc
-          .split(/[+＋、,，]/)
-          .map((i) => i.trim().replace(/^[（(]|[）)]$/g, ''))
-          .filter((i) => i.length >= 2);
-
+        currentSlotKey = foundMealSlot;
         dayMealSlots[currentDay][foundMealSlot] = {
-          name: dishName,
-          desc: dishDesc,
+          name,
+          desc: instruction,
           protein: protVal,
           calories: calVal,
-          ingredients: ings.length > 0 ? ings : undefined,
+          ingredients: ingredients.length > 0 ? ingredients : undefined,
         };
         continue;
       }
@@ -580,7 +1283,7 @@ export function parseGoogleSearchMealText(
         itemName = itemName.replace(/^[0-9.、\s\-*•]+/, '').trim();
         itemNote = itemNote.replace(/^[（(]|[）)]$/g, '').trim();
 
-        if (itemName.length >= 2 && !seenItemNames.has(itemName)) {
+        if (itemName.length >= 2 && !isInvalidGroceryItemName(itemName) && !seenItemNames.has(itemName)) {
           seenItemNames.add(itemName);
           extractedGroceryItems.push({
             id: `tbl_g_${Date.now()}_${extractedGroceryItems.length}_${Math.floor(Math.random()*1000)}`,
@@ -597,48 +1300,69 @@ export function parseGoogleSearchMealText(
       continue;
     }
 
-    // 2.C. Check for Category Header (e.g. 1. 蛋白質專區, 2. 蔬菜纖維區, etc.)
-    if (lowerLine.includes('蛋白質') && (lowerLine.includes('區') || lowerLine.includes('專區') || lowerLine.includes('類'))) {
+    // 2.C. Check for Category Header (e.g. 一、 蛋白質專區, 二、 蔬菜纖維區, 1. 蛋白質專區, 【蛋白質專區】, etc.)
+    const cleanHeaderLine = rawLine
+      .replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]+/g, '')
+      .trim()
+      .toLowerCase();
+
+    if (
+      (cleanHeaderLine.startsWith('蛋白質') || lowerLine.includes('蛋白質專區') || (lowerLine.includes('蛋白質') && (lowerLine.includes('區') || lowerLine.includes('專區') || lowerLine.includes('類')))) &&
+      !lowerLine.includes('預估蛋白質') && !lowerLine.includes('蛋白質含量') && !lowerLine.includes('目標蛋白質') && !lowerLine.includes('蛋白質:') && !lowerLine.includes('蛋白質：')
+    ) {
       currentCategory = 'protein';
       currentDay = null;
-      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]]*蛋白質[^\s:：]*[\s:：]*/, '').trim();
-      if (afterHeader && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
+      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]*.*?(蛋白質)[專區類別項]*[\s:：]*/, '').trim();
+      if (afterHeader && !isInvalidGroceryItemName(afterHeader) && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
         parseAndPushGroceryItem(afterHeader, currentCategory, extractedGroceryItems, seenItemNames, servings);
       }
       continue;
     }
-    if (lowerLine.includes('蔬菜') && (lowerLine.includes('區') || lowerLine.includes('纖維') || lowerLine.includes('類'))) {
+    if (
+      cleanHeaderLine.startsWith('蔬菜') || lowerLine.includes('蔬菜纖維區') || (lowerLine.includes('蔬菜') && (lowerLine.includes('區') || lowerLine.includes('纖維') || lowerLine.includes('類')))
+    ) {
       currentCategory = 'vegetable';
       currentDay = null;
-      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]]*蔬菜[^\s:：]*[\s:：]*/, '').trim();
-      if (afterHeader && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
+      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]*.*?(蔬菜|纖維)[專區類別項]*[\s:：]*/, '').trim();
+      if (afterHeader && !isInvalidGroceryItemName(afterHeader) && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
         parseAndPushGroceryItem(afterHeader, currentCategory, extractedGroceryItems, seenItemNames, servings);
       }
       continue;
     }
-    if ((lowerLine.includes('碳水') || lowerLine.includes('主食') || lowerLine.includes('澱粉')) && (lowerLine.includes('區') || lowerLine.includes('類') || lowerLine.includes('低 gi') || lowerLine.includes('低gi'))) {
+    if (
+      cleanHeaderLine.startsWith('優質低') || cleanHeaderLine.startsWith('碳水') || cleanHeaderLine.startsWith('主食') || cleanHeaderLine.startsWith('澱粉') ||
+      lowerLine.includes('優質低gi碳水') || lowerLine.includes('優質低 gi 碳水') || lowerLine.includes('低gi碳水') || lowerLine.includes('優質碳水') ||
+      ((lowerLine.includes('碳水') || lowerLine.includes('主食') || lowerLine.includes('澱粉')) && (lowerLine.includes('區') || lowerLine.includes('類') || lowerLine.includes('低 gi') || lowerLine.includes('低gi') || lowerLine.includes('專區')))
+    ) {
       currentCategory = 'carb';
       currentDay = null;
-      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]]*.*?(碳水|主食|澱粉)[^\s:：]*[\s:：]*/, '').trim();
-      if (afterHeader && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
+      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]*.*?(碳水|主食|澱粉)[專區類別項]*[\s:：]*/, '').trim();
+      if (afterHeader && !isInvalidGroceryItemName(afterHeader) && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
         parseAndPushGroceryItem(afterHeader, currentCategory, extractedGroceryItems, seenItemNames, servings);
       }
       continue;
     }
-    if ((lowerLine.includes('油脂') || lowerLine.includes('調味')) && (lowerLine.includes('區') || lowerLine.includes('類'))) {
+    if (
+      cleanHeaderLine.startsWith('好油脂') || cleanHeaderLine.startsWith('油脂') || lowerLine.includes('好油脂與調味') || lowerLine.includes('好油與調味') ||
+      ((lowerLine.includes('油脂') || lowerLine.includes('調味') || lowerLine.includes('好油')) && (lowerLine.includes('區') || lowerLine.includes('類') || lowerLine.includes('專區')))
+    ) {
       currentCategory = 'fat_seasoning';
       currentDay = null;
-      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]]*.*?(油脂|調味)[^\s:：]*[\s:：]*/, '').trim();
-      if (afterHeader && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
+      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]*.*?(油脂|調味|好油)[專區類別項]*[\s:：]*/, '').trim();
+      if (afterHeader && !isInvalidGroceryItemName(afterHeader) && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
         parseAndPushGroceryItem(afterHeader, currentCategory, extractedGroceryItems, seenItemNames, servings);
       }
       continue;
     }
-    if ((lowerLine.includes('水果') || lowerLine.includes('飲品') || lowerLine.includes('飲料')) && (lowerLine.includes('區') || lowerLine.includes('類') || lowerLine.includes('低 gi') || lowerLine.includes('低gi'))) {
+    if (
+      cleanHeaderLine.startsWith('低gi水果') || cleanHeaderLine.startsWith('水果') || cleanHeaderLine.startsWith('飲品') ||
+      lowerLine.includes('低gi水果與飲品') || lowerLine.includes('低 gi 水果') || lowerLine.includes('水果與飲品') || lowerLine.includes('低gi水果') ||
+      ((lowerLine.includes('水果') || lowerLine.includes('飲品') || lowerLine.includes('飲料')) && (lowerLine.includes('區') || lowerLine.includes('類') || lowerLine.includes('低 gi') || lowerLine.includes('低gi') || lowerLine.includes('專區')))
+    ) {
       currentCategory = 'fruit_beverage';
       currentDay = null;
-      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]]*.*?(水果|飲品|飲料)[^\s:：]*[\s:：]*/, '').trim();
-      if (afterHeader && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
+      const afterHeader = rawLine.replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]*.*?(水果|飲品|飲料)[專區類別項]*[\s:：]*/, '').trim();
+      if (afterHeader && !isInvalidGroceryItemName(afterHeader) && (afterHeader.includes('：') || afterHeader.includes(':') || afterHeader.match(/\d/))) {
         parseAndPushGroceryItem(afterHeader, currentCategory, extractedGroceryItems, seenItemNames, servings);
       }
       continue;
@@ -669,6 +1393,8 @@ export function parseGoogleSearchMealText(
       if (slotWord.includes('午') || slotWord.includes('中') || slotWord.includes('lunch')) slotKey = 'lunch';
       else if (slotWord.includes('晚') || slotWord.includes('dinner')) slotKey = 'dinner';
       else if (slotWord.includes('點心') || slotWord.includes('加餐') || slotWord.includes('下午茶') || slotWord.includes('運動後') || slotWord.includes('snack')) slotKey = 'snack';
+
+      currentSlotKey = slotKey;
 
       // Extract protein & calories with robust regex
       let protVal: number | undefined;
@@ -729,65 +1455,186 @@ export function parseGoogleSearchMealText(
         }
       }
 
-      // Remove metrics and brackets from text
-      let text = slotContent
-        .replace(/[（(\[][^()（）\[\]]*(?:蛋白質|蛋白|熱量|kcal|大卡|卡路里|protein|calories)[^()（）\[\]]*[）)\]]/gi, ' ')
-        .replace(/(?:預估)?(?:蛋白質|蛋白|protein)[：:\s=~約]*\d+(?:\.\d+)?\s*(?:g|克)?/gi, ' ')
-        .replace(/(?:預估)?(?:熱量|卡路里|calories|cal|kcal)[：:\s=~約]*\d+(?:\.\d+)?\s*(?:kcal|大卡|卡|cal)?/gi, ' ')
-        .replace(/\d+(?:\.\d+)?\s*(?:g|克)\s*(?:的)?(?:蛋白質|蛋白)/gi, ' ')
-        .replace(/\d+(?:\.\d+)?\s*(?:kcal|大卡|卡|cal)/gi, ' ')
-        .replace(/\b\d+\s*g\s*\d+\s*kcal\b/gi, ' ')
-        .replace(/\b\d+\s*g\s*\d+\b/gi, ' ')
-        .replace(/(\d+(?:\.\d+)?)\s*(?:g|克)\s*(\d+(?:\.\d+)?)\s*(?:kcal|大卡|卡|cal)?\s*$/i, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      // Strip leading and trailing punctuation like: ':', '：', '-', '–', '•', '*', '|', '/', '、', '，'
-      text = text.replace(/^[：:\-–—•*\s|/,、，。]+/, '').replace(/[：:\-–—•*\s|/,、，。]+$/, '').trim();
-
-      let dishName = text;
-      let dishDesc = text;
-
-      if (text.includes('主要食材：') || text.includes('主要食材:')) {
-        const parts = text.split(/主要食材[：:]/);
-        dishName = parts[0].trim();
-        dishDesc = parts[1].trim() || dishName;
-      } else if (text.includes('作法：') || text.includes('作法:')) {
-        const parts = text.split(/作法[：:]/);
-        dishName = parts[0].trim();
-        dishDesc = parts[1].trim() || dishName;
-      } else if (text.includes('：') || text.includes(':')) {
-        const parts = text.split(/[：:]/);
-        dishName = parts[0].trim();
-        dishDesc = parts.slice(1).join(' ').trim() || dishName;
-      }
-
-      // Strip outer unclosed brackets or stray brackets from dishName
-      dishName = dishName.replace(/^[（(\[]|[）)\]]$/g, '').replace(/^[：:\-–—•*\s|/,、，。]+/, '').replace(/[：:\-–—•*\s|/,、，。]+$/, '').trim();
-      dishDesc = dishDesc.replace(/^[（(\[]|[）)\]]$/g, '').replace(/^[：:\-–—•*\s|/,、，。]+/, '').replace(/[：:\-–—•*\s|/,、，。]+$/, '').trim();
-
-      if (!dishName) dishName = '原型健康高蛋白餐點';
-      if (!dishDesc) dishDesc = dishName;
-
-      const ings = dishDesc
-        .split(/[+＋、,，]/)
-        .map((i) => i.trim().replace(/^[（(]|[）)]$/g, ''))
-        .filter((i) => i.length >= 2);
+      const { name, instruction, ingredients } = extractMealDishAndRecipe(
+        slotContent,
+        undefined,
+        '高蛋白原型餐'
+      );
 
       dayMealSlots[currentDay][slotKey] = {
-        name: dishName,
-        desc: dishDesc,
+        name,
+        desc: instruction,
         protein: protVal,
         calories: calVal,
-        ingredients: ings.length > 0 ? ings : undefined,
+        ingredients: ingredients.length > 0 ? ingredients : undefined,
       };
       continue;
     }
 
-    // Otherwise, try parsing as a grocery item line
+    // 2.EE. Check for multi-line Dish Name (菜色名稱:, 菜名:, 餐點名稱:, 菜色:, 料理名稱:, 品項名稱:)
     if (
-      rawLine.includes('：') || rawLine.includes(':') || 
-      rawLine.match(/\d+\s*(g|kg|盒|顆|根|包|條|罐|瓶|打|份|片|朵|袋|碗|杯)/i)
+      currentDay &&
+      rawLine.match(/^[#*\-•\s\d.、【】\[\]()（）*_~`]*(?:菜色名稱|菜色|菜名|餐點名稱|餐點品名|料理名稱|品項名稱|餐點|品名)[：:\s*#_~`]/i)
+    ) {
+      if (!currentSlotKey) {
+        currentSlotKey = 'breakfast';
+      }
+
+      const existingSlot = dayMealSlots[currentDay][currentSlotKey];
+      const { name, instruction, ingredients } = extractMealDishAndRecipe(
+        rawLine,
+        undefined,
+        existingSlot?.name || '高蛋白原型餐'
+      );
+
+      if (name && name !== '原型健康高蛋白餐點' && name !== '高蛋白原型餐') {
+        if (existingSlot) {
+          existingSlot.name = name;
+        } else {
+          dayMealSlots[currentDay][currentSlotKey] = {
+            name,
+            desc: instruction,
+            ingredients: ingredients.length > 0 ? ingredients : undefined,
+          };
+        }
+      }
+
+      if (instruction && instruction.length > 5 && (!existingSlot?.desc || existingSlot.desc === '高蛋白原型餐' || existingSlot.desc.length < 5 || existingSlot.desc === existingSlot.name)) {
+        if (dayMealSlots[currentDay][currentSlotKey]) {
+          dayMealSlots[currentDay][currentSlotKey]!.desc = instruction;
+        }
+      }
+
+      if (ingredients && ingredients.length > 0 && (!existingSlot?.ingredients || existingSlot.ingredients.length === 0)) {
+        if (dayMealSlots[currentDay][currentSlotKey]) {
+          dayMealSlots[currentDay][currentSlotKey]!.ingredients = ingredients;
+        }
+      }
+
+      // Check if protein / calorie is present in this line
+      const pM = rawLine.match(/(?:預估蛋白質|蛋白質含量|蛋白質|蛋白|protein)[：:\s=~約]*(\d+(?:\.\d+)?)\s*(?:g|克)?/i);
+      const cM = rawLine.match(/(?:預估熱量|總熱量|熱量|卡路里|calories|cal|kcal)[：:\s=~約]*(\d+(?:\.\d+)?)\s*(?:kcal|大卡|卡|cal)?/i);
+      if (pM && dayMealSlots[currentDay][currentSlotKey] && !dayMealSlots[currentDay][currentSlotKey]?.protein) {
+        dayMealSlots[currentDay][currentSlotKey]!.protein = Math.round(parseFloat(pM[1]));
+      }
+      if (cM && dayMealSlots[currentDay][currentSlotKey] && !dayMealSlots[currentDay][currentSlotKey]?.calories) {
+        dayMealSlots[currentDay][currentSlotKey]!.calories = Math.round(parseFloat(cM[1]));
+      }
+      continue;
+    }
+
+    // 2.F. Check for multi-line Cooking Method / Recipe (作法:, 做法:, 料理作法:, 備餐步驟:)
+    if (
+      currentDay && currentSlotKey && dayMealSlots[currentDay][currentSlotKey] &&
+      rawLine.match(/^[#*\-•\s\d.、【】\[\]()（）]*(?:料理作法|備餐步驟|主要食材搭配作法|搭配作法|料理步驟|作法|做法|步驟)[：:\s]/i)
+    ) {
+      const methodText = rawLine
+        .replace(/^[#*\-•\s\d.、【】\[\]()（）]*(?:料理作法|備餐步驟|主要食材搭配作法|搭配作法|料理步驟|作法|做法|步驟)[：:\s]*/i, '')
+        .replace(/[（(\[][^()（）\[\]]*(?:蛋白質|蛋白|熱量|kcal|大卡|卡路里|protein|calories)[^()（）\[\]]*[）)\]]/gi, '')
+        .replace(/[：:\-–—•*\s|/,、，。]+$/, '')
+        .trim();
+
+      // Check if protein / calorie is present in this line
+      const pM = rawLine.match(/(?:預估蛋白質|蛋白質含量|蛋白質|蛋白|protein)[：:\s=~約]*(\d+(?:\.\d+)?)\s*(?:g|克)?/i);
+      const cM = rawLine.match(/(?:預估熱量|總熱量|熱量|卡路里|calories|cal|kcal)[：:\s=~約]*(\d+(?:\.\d+)?)\s*(?:kcal|大卡|卡|cal)?/i);
+      if (pM && !dayMealSlots[currentDay][currentSlotKey]?.protein) {
+        dayMealSlots[currentDay][currentSlotKey]!.protein = Math.round(parseFloat(pM[1]));
+      }
+      if (cM && !dayMealSlots[currentDay][currentSlotKey]?.calories) {
+        dayMealSlots[currentDay][currentSlotKey]!.calories = Math.round(parseFloat(cM[1]));
+      }
+
+      if (methodText.length > 0) {
+        dayMealSlots[currentDay][currentSlotKey]!.desc = methodText;
+      }
+      continue;
+    }
+
+    // 2.G. Check for multi-line Ingredients (主要食材:, 食材準備:, 食材:)
+    if (
+      currentDay && currentSlotKey && dayMealSlots[currentDay][currentSlotKey] &&
+      rawLine.match(/^[#*\-•\s\d.、【】\[\]()（）]*(?:主要食材|食材準備|食材)[：:\s]/i)
+    ) {
+      let ingLine = rawLine
+        .replace(/^[#*\-•\s\d.、【】\[\]()（）]*(?:主要食材|食材準備|食材)[：:\s]*/i, '')
+        .trim();
+
+      // If this line also contains 作法:
+      if (ingLine.match(/(?:料理作法|備餐步驟|料理步驟|作法|做法|步驟)[：:\s]/i)) {
+        const parts = ingLine.split(/(?:料理作法|備餐步驟|料理步驟|作法|做法|步驟)[：:\s]/i);
+        const ingPart = parts[0].trim();
+        const methodPart = parts.slice(1).join('：').trim();
+        if (methodPart.length > 0) {
+          dayMealSlots[currentDay][currentSlotKey]!.desc = methodPart
+            .replace(/[（(\[][^()（）\[\]]*(?:蛋白質|蛋白|熱量|kcal|大卡|卡路里|protein|calories)[^()（）\[\]]*[）)\]]/gi, '')
+            .replace(/[：:\-–—•*\s|/,、，。]+$/, '')
+            .trim();
+        }
+        ingLine = ingPart;
+      }
+
+      const extractedIngs = ingLine
+        .replace(/[（(\[][^()（）\[\]]*(?:蛋白質|蛋白|熱量|kcal|大卡|卡路里|protein|calories)[^()（）\[\]]*[）)\]]/gi, '')
+        .split(/[+＋、,，;；/、\n]/)
+        .map((i) => i.trim().replace(/^[（(]|[）)]$/g, '').replace(/^[#*\-•\s\d.、]+/, ''))
+        .filter((i) => i.length >= 2 && !i.includes('作法') && !i.includes('熱量') && !i.includes('蛋白質'));
+
+      if (extractedIngs.length > 0) {
+        dayMealSlots[currentDay][currentSlotKey]!.ingredients = extractedIngs;
+      }
+      continue;
+    }
+
+    // 2.H. Check for multi-line Nutrition Metric (預估蛋白質: 24g, 預估熱量: 350kcal)
+    if (
+      currentDay && currentSlotKey && dayMealSlots[currentDay][currentSlotKey] &&
+      (rawLine.includes('蛋白質') || rawLine.includes('熱量') || rawLine.includes('kcal')) &&
+      (rawLine.includes('：') || rawLine.includes(':') || rawLine.includes('大卡') || rawLine.includes('克') || rawLine.includes('g')) &&
+      !rawLine.includes('專區') && !rawLine.includes('區')
+    ) {
+      const pM = rawLine.match(/(?:預估蛋白質|蛋白質含量|蛋白質|蛋白|protein)[：:\s=~約]*(\d+(?:\.\d+)?)\s*(?:g|克)?/i);
+      const cM = rawLine.match(/(?:預估熱量|總熱量|熱量|卡路里|calories|cal|kcal)[：:\s=~約]*(\d+(?:\.\d+)?)\s*(?:kcal|大卡|卡|cal)?/i);
+      if (pM && !dayMealSlots[currentDay][currentSlotKey]?.protein) {
+        dayMealSlots[currentDay][currentSlotKey]!.protein = Math.round(parseFloat(pM[1]));
+      }
+      if (cM && !dayMealSlots[currentDay][currentSlotKey]?.calories) {
+        dayMealSlots[currentDay][currentSlotKey]!.calories = Math.round(parseFloat(cM[1]));
+      }
+      continue;
+    }
+
+    // 2.I. Check for numbered cooking steps continuation (e.g. 1. 將雞蛋放入電鍋蒸熟...)
+    if (
+      currentDay && currentSlotKey && dayMealSlots[currentDay][currentSlotKey] &&
+      !currentCategory &&
+      rawLine.match(/^(?:\d+[.、\s]|\(\d+\)|（\d+）|步驟\d+)[^\d]/) &&
+      (rawLine.includes('煎') || rawLine.includes('煮') || rawLine.includes('烤') || rawLine.includes('炒') || rawLine.includes('蒸') || rawLine.includes('切') || rawLine.includes('拌') || rawLine.includes('入') || rawLine.includes('放') || rawLine.includes('熱') || rawLine.includes('淋') || rawLine.includes('水') || rawLine.includes('熟'))
+    ) {
+      const stepText = rawLine.trim();
+      const currentDesc = dayMealSlots[currentDay][currentSlotKey]!.desc;
+      if (!currentDesc || currentDesc.length < 5 || currentDesc === dayMealSlots[currentDay][currentSlotKey]!.name) {
+        dayMealSlots[currentDay][currentSlotKey]!.desc = stepText;
+      } else {
+        dayMealSlots[currentDay][currentSlotKey]!.desc += `\n${stepText}`;
+      }
+      continue;
+    }
+
+    // 2.J. If inside a category and line is a numbered item or grocery item line
+    if (
+      currentCategory &&
+      !currentDay &&
+      !isInvalidGroceryItemName(rawLine)
+    ) {
+      parseAndPushGroceryItem(rawLine, currentCategory, extractedGroceryItems, seenItemNames, servings);
+      continue;
+    }
+
+    // Otherwise, try parsing as a grocery item line if it has quantity units or colon
+    if (
+      !isInvalidGroceryItemName(rawLine) &&
+      (rawLine.includes('：') || rawLine.includes(':') || 
+      rawLine.match(/\d+\s*(g|kg|ml|l|盒|顆|根|包|條|罐|瓶|打|份|片|朵|袋|碗|杯)/i))
     ) {
       parseAndPushGroceryItem(rawLine, currentCategory, extractedGroceryItems, seenItemNames, servings);
     }
@@ -981,7 +1828,7 @@ export function parseGoogleSearchMealText(
         proteinApprox: bProt,
         carbsApprox: Math.round(bCal * 0.4 / 4),
         fatsApprox: Math.round(bCal * 0.25 / 9),
-        ingredients: bSlot?.ingredients || bDesc.split(/[+＋、,，]/).map((i) => i.trim()).filter((i) => i.length >= 2),
+        ingredients: resolveSlotIngredients(bSlot?.ingredients, bName, bDesc),
         tags: ['#早餐啟動', '#亮氨酸MPS', '#低GI原型'],
       },
       lunch: {
@@ -991,7 +1838,7 @@ export function parseGoogleSearchMealText(
         proteinApprox: lProt,
         carbsApprox: Math.round(lCal * 0.45 / 4),
         fatsApprox: Math.round(lCal * 0.25 / 9),
-        ingredients: lSlot?.ingredients || lDesc.split(/[+＋、,，]/).map((i) => i.trim()).filter((i) => i.length >= 2),
+        ingredients: resolveSlotIngredients(lSlot?.ingredients, lName, lDesc),
         tags: ['#午餐充能', '#高蛋白質', '#完整必需胺基酸'],
       },
       dinner: {
@@ -1001,7 +1848,7 @@ export function parseGoogleSearchMealText(
         proteinApprox: dProt,
         carbsApprox: Math.round(dCal * 0.35 / 4),
         fatsApprox: Math.round(dCal * 0.3 / 9),
-        ingredients: dSlot?.ingredients || dDesc.split(/[+＋、,，]/).map((i) => i.trim()).filter((i) => i.length >= 2),
+        ingredients: resolveSlotIngredients(dSlot?.ingredients, dName, dDesc),
         tags: ['#夜間修復', '#抗發炎Omega3', '#高纖維蔬菜'],
       },
       snack: {
@@ -1011,7 +1858,7 @@ export function parseGoogleSearchMealText(
         proteinApprox: sProt,
         carbsApprox: Math.round(sCal * 0.3 / 4),
         fatsApprox: Math.round(sCal * 0.45 / 9),
-        ingredients: sSlot?.ingredients || sDesc.split(/[+＋、,，]/).map((i) => i.trim()).filter((i) => i.length >= 2),
+        ingredients: resolveSlotIngredients(sSlot?.ingredients, sName, sDesc),
         tags: ['#運動後補給', '#微量礦物質'],
       },
       totalCaloriesApprox: bCal + lCal + dCal + sCal,
@@ -1019,70 +1866,15 @@ export function parseGoogleSearchMealText(
     };
   });
 
-  // If user pasted Table 2 with specific recipes but no Table 1 grocery list,
-  // extract unique ingredients directly from Table 2's meal descriptions!
-  if (extractedGroceryItems.length < 3) {
-    const rawIngPool: { name: string; day: string }[] = [];
-    weeklyMealPlan.forEach((d) => {
-      [d.breakfast, d.lunch, d.dinner, d.snack].forEach((m) => {
-        if (m.ingredients) {
-          m.ingredients.forEach((ing) => {
-            const cleanIng = ing.replace(/^[0-9.、\s\-*•]+/, '').trim();
-            if (cleanIng.length >= 2 && !cleanIng.includes('kcal') && !cleanIng.includes('大卡')) {
-              rawIngPool.push({ name: cleanIng, day: d.dayOfWeek });
-            }
-          });
-        }
-      });
-    });
+  // 3. Consolidate and merge identical ingredients across Table 1 and Table 2 (meals)
+  const { groceryList: consolidatedGroceries, weeklyMealPlan: consolidatedMealPlan } = consolidateGroceryAndMealIngredients(
+    extractedGroceryItems,
+    weeklyMealPlan,
+    servings
+  );
 
-    for (const item of rawIngPool) {
-      // Clean name from quantities if attached at end or middle
-      let cleanName = item.name;
-      let qtyStr = `${1 * sMultiplier} 份`;
-      const qtyMatch = item.name.match(/^(.*?)\s*(\d+[\d\s\-~到至./]*(?:片|包|顆|罐|打|盒|小包|大包|條|中條|大條|瓶|把|袋|g|kg|ml|大桶|支|份|盤|杯|碗)(?:\s*[(（][^()（）]*[)）])?|各?適量)$/);
-      if (qtyMatch && qtyMatch[1].trim().length >= 2) {
-        cleanName = qtyMatch[1].trim();
-        qtyStr = qtyMatch[2].trim();
-      }
-
-      if (cleanName.length >= 2 && !seenItemNames.has(cleanName)) {
-        seenItemNames.add(cleanName);
-        const cat = categorizeFoodItem(cleanName);
-        extractedGroceryItems.push({
-          id: `t2_ing_${Date.now()}_${extractedGroceryItems.length}_${Math.floor(Math.random()*1000)}`,
-          name: cleanName,
-          quantity: qtyStr,
-          category: cat,
-          checked: false,
-          notes: `依 Table 2 菜單（${item.day}）食材自動提煉 (${servings}人份)`,
-          mealUsage: [`${item.day} 備餐使用`],
-        });
-      }
-    }
-  }
-
-  // Link grocery items to meal usage
-  if (extractedGroceryItems.length > 0) {
-    for (const gItem of extractedGroceryItems) {
-      const matchedDays: string[] = [];
-      const shortName = gItem.name.split('/')[0].slice(0, 4);
-
-      weeklyMealPlan.forEach((dayPlan) => {
-        const fullDayText = `${dayPlan.breakfast.description} ${dayPlan.lunch.description} ${dayPlan.dinner.description} ${dayPlan.snack.description}`;
-        if (fullDayText.includes(shortName) || fullDayText.includes(gItem.name)) {
-          matchedDays.push(dayPlan.dayOfWeek);
-        }
-      });
-
-      if (matchedDays.length > 0) {
-        gItem.mealUsage = matchedDays.map((d) => `${d} 備餐使用`);
-      }
-    }
-  }
-
-  // 4. Fallback: only if user provided NO grocery items at all (< 3 items), add standard Galpin grocery items
-  if (extractedGroceryItems.length < 3) {
+  // 4. Fallback: only if user provided NO grocery items and meal ingredients (< 3 items), add standard Galpin grocery items
+  if (consolidatedGroceries.length < 3) {
     const foodKeywordsPool: { name: string; baseQty: number; unit: string; cat: GroceryItem['category']; note: string }[] = [
       { name: '冷藏去皮大雞胸肉', baseQty: 1.2, unit: 'kg', cat: 'protein', note: '分裝冷凍，每次取 180g 舒肥/乾煎' },
       { name: '挪威大西洋生鮮鮭魚排', baseQty: 600, unit: 'g', cat: 'protein', note: '富含 EPA/DHA Omega-3 脂肪酸' },
@@ -1100,27 +1892,26 @@ export function parseGoogleSearchMealText(
     ];
 
     for (const item of foodKeywordsPool) {
-      if (!seenItemNames.has(item.name)) {
-        seenItemNames.add(item.name);
-        const qtyVal = item.baseQty * sMultiplier;
-        const formattedQty = Number.isInteger(qtyVal) ? `${qtyVal} ${item.unit}` : `${qtyVal.toFixed(1)} ${item.unit}`;
-        
-        extractedGroceryItems.push({
-          id: `gen_g_${Date.now()}_${extractedGroceryItems.length}`,
-          name: item.name,
-          quantity: formattedQty,
-          category: item.cat,
-          checked: false,
-          notes: item.note,
-          mealUsage: ['週一至週日 7 天依序備餐使用'],
-        });
-      }
+      const qtyVal = item.baseQty * sMultiplier;
+      const formattedQty = Number.isInteger(qtyVal) ? `${qtyVal} ${item.unit}` : `${qtyVal.toFixed(1)} ${item.unit}`;
+      
+      consolidatedGroceries.push({
+        id: `gen_g_${Date.now()}_${consolidatedGroceries.length}`,
+        name: item.name,
+        quantity: formattedQty,
+        category: item.cat,
+        checked: false,
+        notes: item.note,
+        mealUsage: ['週一至週日 7 天依序備餐使用'],
+      });
     }
   }
 
+  const finalGroceryList = consolidatedGroceries.filter((item) => !isInvalidGroceryItemName(item.name));
+
   return {
-    weeklyMealPlan,
-    groceryList: extractedGroceryItems,
+    weeklyMealPlan: consolidatedMealPlan,
+    groceryList: finalGroceryList,
     parsedThemeTitle,
   };
 }
@@ -1135,45 +1926,57 @@ function parseAndPushGroceryItem(
   seenItemNames: Set<string>,
   servings: number
 ) {
-  const clean = line.replace(/^[#*\-•\s\d.、【】\[\]]+/, '').trim();
-  if (!clean || clean.length < 2) return;
+  if (!line || isInvalidGroceryItemName(line)) return;
 
-  // Ignore section titles that got here by mistake
-  if (
-    clean.includes('專區') || clean.includes('採買清單') || 
-    clean.includes('採購清單') || clean.includes('食材準備') ||
-    clean.includes('建議菜單') || clean.includes('輸出結構')
-  ) {
-    return;
-  }
+  // Remove leading numbering like 1., 2., 3., 4., 1、, (1), etc. and bullet points
+  let clean = line.replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]+/g, '').trim();
+  if (!clean || clean.length < 2 || isInvalidGroceryItemName(clean)) return;
 
   let itemName = '';
   let itemQty = '';
-  let itemNotes = `依 Google AI 問問解析採買 (${servings}人份)`;
+  let itemNotes = `超市食材採買 (${servings}人份)`;
 
-  // Split by colon (e.g. "冷凍鮭魚菲力：3 片 (約 450g)（富含 Omega-3）" or "彩椒（紅、黃、綠）：4 顆")
+  // Split by colon (e.g. "冷凍/冷藏鮭魚菲力：3 片 (約 450g)（富含 Omega-3 脂肪酸、抗發炎與優質蛋白質）")
   const colonIndex = clean.search(/[：:]/);
   if (colonIndex !== -1) {
     itemName = clean.substring(0, colonIndex).trim();
     const rest = clean.substring(colonIndex + 1).trim();
 
-    // Extract bracketed notes from quantity / rest
-    const bracketMatch = rest.match(/[（(]([^）)]+)[）)]/);
-    if (bracketMatch) {
-      itemNotes = bracketMatch[1].trim();
-      itemQty = rest.replace(/[（(][^）)]+[）)]/g, '').trim();
+    // Check if there are descriptive notes at the end (e.g. （富含...） or （提供...） or (約...) or - ...)
+    const noteMatch = rest.match(/(?:[（(]([^()（）]*(?:富含|提供|優質|抗氧化|高蛋白|高纖|未精緻|促進|穩定|平穩|強化|暖胃|鮮甜|護心|降發炎|增強|健康|好油|多酚|天然|助消化|提升|建議|冷藏|分裝|常備|調味|烹調|必備|使用|補充|防脹氣)[^()（）]*)[）)]|[-–—]\s*(.+)|[，,]\s*(.+))$/);
+    
+    if (noteMatch) {
+      itemNotes = (noteMatch[1] || noteMatch[2] || noteMatch[3] || '').trim();
+      const qtyPart = rest.slice(0, noteMatch.index).trim();
+      itemQty = qtyPart || rest;
     } else {
-      itemQty = rest;
+      // Check if there is a bracket at the end
+      const lastBracketMatch = rest.match(/[（(]([^()（）]+)[）)]\s*$/);
+      if (lastBracketMatch && lastBracketMatch.index && lastBracketMatch.index > 0) {
+        const beforeBracket = rest.slice(0, lastBracketMatch.index).trim();
+        if (beforeBracket.match(/\d|各|常備|適量/)) {
+          if (lastBracketMatch[1].length >= 3 && !lastBracketMatch[1].match(/^\s*約?\s*\d+\s*(?:g|kg|ml|l|顆|片|盒|包|條|罐|瓶|份)\s*$/i)) {
+            itemNotes = lastBracketMatch[1].trim();
+            itemQty = beforeBracket;
+          } else {
+            itemQty = rest;
+          }
+        } else {
+          itemQty = rest;
+        }
+      } else {
+        itemQty = rest;
+      }
     }
   } else {
     // If no colon, use QTY_UNIT_REGEX
     const qMatch = clean.match(QTY_UNIT_REGEX);
-    if (qMatch && qMatch.index !== undefined) {
+    if (qMatch && qMatch.index !== undefined && qMatch.index > 0) {
       itemName = clean.slice(0, qMatch.index).trim();
       itemQty = qMatch[0].trim();
       const afterQty = clean.slice(qMatch.index + qMatch[0].length).trim();
       if (afterQty) {
-        itemNotes = afterQty.replace(/^[（(]|[）)]$/g, '').trim();
+        itemNotes = afterQty.replace(/^[（(\-–—,，\s]+|[）)\s]+$/g, '').trim();
       }
     } else {
       itemName = clean;
@@ -1182,11 +1985,21 @@ function parseAndPushGroceryItem(
   }
 
   // Clean up itemName
-  itemName = itemName.replace(/^[0-9.、\s\-*•]+/, '').trim();
-  itemNotes = itemNotes.replace(/^[（(]|[）)]$/g, '').trim();
+  itemName = itemName
+    .replace(/^[#*\-•\s\d.、【】\[\]()（）一二三四五六七八九十]+/g, '')
+    .replace(/[：:\-–—•*\s|/,、，。]+$/, '')
+    .trim();
 
-  if (itemName.length >= 2 && !seenItemNames.has(itemName)) {
-    seenItemNames.add(itemName);
+  itemQty = itemQty
+    .replace(/^[：:\-–—•*\s|/,、，。]+/, '')
+    .replace(/[：:\-–—•*\s|/,、，。]+$/, '')
+    .trim();
+
+  itemNotes = itemNotes
+    .replace(/^[（(\-–—,，\s]+|[）)\s]+$/g, '')
+    .trim();
+
+  if (itemName.length >= 2 && !isInvalidGroceryItemName(itemName)) {
     const category = currentCategory || categorizeFoodItem(itemName);
 
     extractedGroceryItems.push({
@@ -1195,7 +2008,7 @@ function parseAndPushGroceryItem(
       quantity: itemQty || `${1 * Math.max(1, servings)} 份`,
       category,
       checked: false,
-      notes: itemNotes,
+      notes: itemNotes || `超市食材採買 (${servings}人份)`,
       mealUsage: ['週一至週日菜單依序使用'],
     });
   }

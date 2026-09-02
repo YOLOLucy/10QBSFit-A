@@ -33,7 +33,10 @@ import {
   Sunrise,
   Sun,
   Moon,
-  Apple
+  Apple,
+  Upload,
+  FileUp,
+  Download
 } from 'lucide-react';
 import { INITIAL_GROCERY_LIST, WEEKLY_MEAL_PLAN } from '../data/mealAndGroceryData';
 import { GroceryItem, DayMealPlan, UserProfile, DailyRecord } from '../types';
@@ -128,14 +131,34 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
     }
   };
 
-  // Markdown Table Modal state for inspecting/copying non-blank Markdown tables
+  // Markdown & Structured Plain Text Modal state for inspecting/copying/downloading
   const [isMarkdownModalOpen, setIsMarkdownModalOpen] = useState<boolean>(false);
-  const [markdownModalTab, setMarkdownModalTab] = useState<'grocery' | 'mealplan' | 'both'>('mealplan');
+  const [markdownModalTab, setMarkdownModalTab] = useState<'grocery' | 'mealplan' | 'both' | 'plaintext'>('mealplan');
   const [copiedModalText, setCopiedModalText] = useState<boolean>(false);
 
   const [pastedGoogleResult, setPastedGoogleResult] = useState<string>('');
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [copiedQuery, setCopiedQuery] = useState<boolean>(false);
+  const [copiedPlainText, setCopiedPlainText] = useState<boolean>(false);
+  const [customGoogleQuery, setCustomGoogleQuery] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        setPastedGoogleResult(text);
+        setUploadedFileName(file.name);
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+  };
 
   // Live network status
   const [netStatus, setNetStatus] = useState<InternetStatus | null>(null);
@@ -342,22 +365,41 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
 
   const cookingMethodsStr = cookingMethods && cookingMethods.length > 0 ? cookingMethods.join('、') : '電鍋、一鍋到底、分開料理';
 
-  // Google Search query builder string with comprehensive Settings 1 + 2 + 3 and strict non-blank Table Output formatting
-  const googleQueryText = `依安迪·加爾平博士 (Dr. Andy Galpin) 運動生理學與營養學理論設計一週菜單與超市食材採買清單：
+  // Google Search query builder string with Settings 1 + 2 + 3 and text-file export instruction
+  const defaultGoogleQueryText = `依安迪·加爾平博士 (Dr. Andy Galpin) 運動生理學與營養學理論設計一週菜單與超市食材採買清單：
 【1. 核心指令】加爾平運動生理學原則，每餐蛋白質達 30-45g 觸發肌肉蛋白質合成 (MPS) 亮氨酸超量恢復，100% 原型全食物。
 【2. 前頁生理與 TDEE 數據】身高 ${currentHeight}cm、體重 ${currentWeight}kg、體脂率 ${currentBodyFat}%、年齡 ${currentAge}歲 (${genderLabel})、活動量「${activityLabel}」、基礎代謝率 BMR ${macroPlan.bmr} kcal、每日總消耗 TDEE ${macroPlan.tdee} kcal、每日目標熱量 ${macroPlan.targetCalories} kcal、目標蛋白質 ${macroPlan.targetProteinG}g。
 【3. 個人偏好與生成設定】用餐人數「${servings} 人份」（食材採買份量依人數等比縮放）、核心健康目標「${fitnessGoal}」、飲食生活習慣偏好「${dietPreference}」、偏好料理方式「${cookingMethodsStr}」（請優先配合所選料理方式規劃極簡備餐步驟）。
-【表格格式硬性規範 - 嚴禁留白與合併儲存格】
-1. 表一【一週超市食材採買清單表格】：『食材分類』欄位之每一行（Row）均必須完整填寫並重複顯示該食材所屬分類名稱（如：蛋白質專區、蛋白質專區、蔬菜纖維區、蔬菜纖維區、優質低GI碳水、好油脂與調味、低GI水果與飲品），每行均不可留白、不可省略、不可合併儲存格！
-2. 表二【7天原型食物建議菜單表格】：『星期』欄位之每一行（Row）均必須完整填寫並重複顯示星期名稱（如：週一、週一、週一、週一、週二、週二、週二、週二、週三、週三...），每一餐每一列皆不可留白、不可省略、不可合併儲存格！
-【輸出格式要求】最後文字請務必以清晰結構化的「繁體中文 Markdown 表格 (Table)」呈現：
-表一、【${servings}人份 一週超市食材採買清單表格】
-| 食材分類 | 食材名稱 | 建議採買份量規格 | 營養亮點與備註 |
-（註：分類欄位每一行皆須完整重複填寫「蛋白質專區」、「蔬菜纖維區」、「優質低GI碳水」、「好油脂與調味」、「低GI水果與飲品」，絕不留白）
-表二、【週一至週日 7天原型食物建議菜單表格】
-| 星期 | 餐別(早餐/午餐/晚餐/點心) | 菜色名稱 | 主要食材搭配作法 | 預估蛋白質(g) | 預估熱量(kcal) |
-（註：星期欄位每一行皆須完整重複填寫「週一」、「週二」...等，絕不留白）`;
+【4. 輸出結構與文字檔格式】
+請依序完整輸出以下兩大部分，並將生成內容格式化為繁體中文結構化純文字，使生成內容存檔可以生成下載的文字檔，出現可以一鍵複製的功能便於快速複製使用：
+一、【一週超市食材採買清單 (${servings}人份)】
+請明確區分以下五大專區，並於各專區底下以 1. 2. 3. 4. 編號列出採購清單（包含食材名稱、建議採買份量規格與營養備註）：
+【蛋白質專區】
+1. 食材名稱：建議採買份量規格（營養備註）
+2. 食材名稱：建議採買份量規格（營養備註）
+【蔬菜纖維區】
+1. 食材名稱：建議採買份量規格（營養備註）
+2. 食材名稱：建議採買份量規格（營養備註）
+【優質低GI碳水】
+1. 食材名稱：建議採買份量規格（營養備註）
+2. 食材名稱：建議採買份量規格（營養備註）
+【好油脂與調味】
+1. 食材名稱：建議採買份量規格（營養備註）
+2. 食材名稱：建議採買份量規格（營養備註）
+【低GI水果與飲品】
+1. 食材名稱：建議採買份量規格（營養備註）
+2. 食材名稱：建議採買份量規格（營養備註）
 
+二、【週一至週日 7天原型食物建議菜單 (${servings}人份)】
+請依週一至週日，依序列出每天的早餐、午餐、晚餐、點心（請明確標註「菜色名稱:」、「主要食材:」、「作法:」、「預估蛋白質:」與「預估熱量:」）：
+- 早餐：菜色名稱：菜名名稱，主要食材：食材項目，作法：詳細烹調指引，預估蛋白質：30g，預估熱量：400kcal
+- 午餐：菜色名稱：菜名名稱，主要食材：食材項目，作法：詳細烹調指引，預估蛋白質：35g，預估熱量：550kcal
+- 晚餐：菜色名稱：菜名名稱，主要食材：食材項目，作法：詳細烹調指引，預估蛋白質：35g，預估熱量：500kcal
+- 點心：菜色名稱：菜名名稱，主要食材：食材項目，作法：詳細烹調指引，預估蛋白質：15g，預估熱量：200kcal
+【存檔規範】請確保生成內容格式完整規範，可直接存檔為可下載的文字檔（.txt 格式），並於輸出區塊中提供便於一鍵複製的純文字格式，文字清晰易讀且完整無遺漏。`;
+
+  const googleQueryText = customGoogleQuery !== null ? customGoogleQuery : defaultGoogleQueryText;
+  const isQueryCustomized = customGoogleQuery !== null && customGoogleQuery !== defaultGoogleQueryText;
   const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQueryText)}`;
 
   const handleCopyGoogleQuery = () => {
@@ -383,6 +425,7 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
         dietPreference,
         targetCalories: macroPlan.targetCalories,
         targetProteinG: macroPlan.targetProteinG,
+        hasUploadedFile: !!uploadedFileName,
         hasPastedText: !!pastedGoogleResult.trim(),
       },
     });
@@ -400,7 +443,7 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
       let themeTitle = '';
       let galpinSummary = '';
 
-      // Check if user pasted custom Google search results
+      // Check if user uploaded a text file or pasted custom Google search results
       if (pastedGoogleResult.trim().length > 10) {
         const parsedCustom = parseGoogleSearchMealText(
           pastedGoogleResult.trim(),
@@ -413,7 +456,9 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
           generatedMeals = parsedCustom.weeklyMealPlan;
           generatedGrocery = parsedCustom.groceryList;
           themeTitle = parsedCustom.parsedThemeTitle;
-          galpinSummary = `已成功解析貼上的 Google AI 問問檢索成果，並依加爾平運動生理學三大營養素原則（每日目標熱量 ${macroPlan.targetCalories} kcal、蛋白質 ${macroPlan.targetProteinG}g），等比轉化為 ${servings} 人份一週超市採買清單 (${generatedGrocery.length}項食材) 與 7 天菜單。`;
+          galpinSummary = uploadedFileName
+            ? `已成功抓取上傳文字檔【${uploadedFileName}】之內容，並依加爾平運動生理學三大營養素原則（每日目標熱量 ${macroPlan.targetCalories} kcal、蛋白質 ${macroPlan.targetProteinG}g），等比轉化為 ${servings} 人份一週超市採買清單 (${generatedGrocery.length}項食材) 與 7 天菜單。`
+            : `已成功解析貼上的 Google 問問 AI 成果，並依加爾平運動生理學三大營養素原則（每日目標熱量 ${macroPlan.targetCalories} kcal、蛋白質 ${macroPlan.targetProteinG}g），等比轉化為 ${servings} 人份一週超市採買清單 (${generatedGrocery.length}項食材) 與 7 天菜單。`;
         }
       }
 
@@ -635,7 +680,97 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
     alert(`已複製【一週採買清單 ＋ 7天菜單 完整 Markdown 表格】！（分類與星期欄位 100% 完整重複、絕無留白）`);
   };
 
-  const openMarkdownModal = (tab: 'grocery' | 'mealplan' | 'both') => {
+  // Helper: Generate Structured Plain Text matching Part 1 & Part 2 exactly
+  const generateStructuredPlainText = (): string => {
+    const catMap: Record<string, string> = {
+      protein: '【蛋白質專區】',
+      vegetable: '【蔬菜纖維區】',
+      carb: '【優質低GI碳水】',
+      fat_seasoning: '【好油脂與調味】',
+      fruit_beverage: '【低GI水果與飲品】',
+    };
+
+    const grouped: Record<string, GroceryItem[]> = {
+      protein: [],
+      vegetable: [],
+      carb: [],
+      fat_seasoning: [],
+      fruit_beverage: [],
+    };
+
+    groceryList.forEach((item) => {
+      if (grouped[item.category]) {
+        grouped[item.category].push(item);
+      } else {
+        grouped.protein.push(item);
+      }
+    });
+
+    let txt = `=======================================================\n`;
+    txt += `依 Dr. Andy Galpin 運動生理學理論 一週超市食材採買清單與 7 天建議菜單\n`;
+    txt += `方案：${planMeta.themeTitle || '加爾平原型食物菜單'}\n`;
+    txt += `目標熱量：${macroPlan.targetCalories} kcal / 蛋白質：${macroPlan.targetProteinG}g / 用餐人數：${servings} 人份\n`;
+    txt += `=======================================================\n\n`;
+
+    txt += `一、【一週超市食材採買清單 (${servings}人份)】\n\n`;
+    Object.entries(grouped).forEach(([catKey, items]) => {
+      txt += `${catMap[catKey] || '【其他食材】'}\n`;
+      if (items.length === 0) {
+        txt += `1. 依個人喜好選購適量原型食材\n`;
+      } else {
+        items.forEach((it, idx) => {
+          const notes = it.notes ? `（${it.notes}）` : '';
+          txt += `${idx + 1}. ${it.name}：${it.quantity} ${notes}\n`;
+        });
+      }
+      txt += `\n`;
+    });
+
+    txt += `二、【週一至週日 7天原型食物建議菜單 (${servings}人份)】\n\n`;
+    mealPlan.forEach((day) => {
+      txt += `【${day.dayOfWeek}】\n`;
+      const slots = [
+        { label: '早餐', meal: day.breakfast },
+        { label: '午餐', meal: day.lunch },
+        { label: '晚餐', meal: day.dinner },
+        { label: '點心', meal: day.snack },
+      ];
+      slots.forEach((s) => {
+        const m = s.meal;
+        const ing = m?.ingredients && m.ingredients.length > 0 ? m.ingredients.join('、') : (m?.name || '依加爾平原則備餐');
+        const desc = m?.description || '原型全食物料理';
+        const prot = m?.proteinApprox || 30;
+        const cal = m?.caloriesApprox || 400;
+        txt += `- ${s.label}：菜色名稱：${m?.name || '高蛋白原型餐'}，主要食材：${ing}，作法：${desc}，預估蛋白質：${prot}g，預估熱量：${cal}kcal\n`;
+      });
+      txt += `\n`;
+    });
+
+    txt += `【備註】100% 遵循 Dr. Andy Galpin 運動生理學原則，每餐蛋白質達標觸發 MPS 肌肉蛋白質合成。\n`;
+    return txt;
+  };
+
+  const handleDownloadTextFile = () => {
+    const text = generateStructuredPlainText();
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Galpin_一週採買清單與7天菜單_${servings}人份.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyFullPlainText = () => {
+    const text = generateStructuredPlainText();
+    navigator.clipboard.writeText(text);
+    setCopiedPlainText(true);
+    setTimeout(() => setCopiedPlainText(false), 2200);
+  };
+
+  const openMarkdownModal = (tab: 'grocery' | 'mealplan' | 'both' | 'plaintext') => {
     setMarkdownModalTab(tab);
     setIsMarkdownModalOpen(true);
     setCopiedModalText(false);
@@ -749,39 +884,45 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
             <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/70 border-2 border-emerald-300 space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                    <Globe className="w-4 h-4" />
+                  <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-2xs shrink-0">
+                    <Globe className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs sm:text-sm font-black text-emerald-950">
-                        在 Google 搜尋中開啟檢索（免登入 Google 帳號）
-                      </span>
-                      <span className="text-[10px] font-bold bg-amber-400 text-slate-950 px-2 py-0.5 rounded-md shadow-2xs">
-                        表格呈現指令 (Markdown Table)
-                      </span>
-                    </div>
+                    <span className="text-xs sm:text-sm font-black text-emerald-950">
+                      在 Google 搜尋中開啟檢索（免登入 Google 帳號）
+                    </span>
                     <p className="text-[11px] text-emerald-800">
-                      已預先加入指令要求 Google / 問問 AI 最後文字以結構化「採買表格」與「7天菜單表格」呈現
+                      已預先加入指令要求 Google / 問問 AI 產出採買清單與 7 天菜單，並將生成內容存成可下載之文字檔格式
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {isQueryCustomized && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomGoogleQuery(null)}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                      title="重設為系統預設檢索指令"
+                    >
+                      <span>↺ 重設指令</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={handleCopyGoogleQuery}
-                    className="px-3 py-1.5 rounded-xl bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-all active:scale-95"
+                    className="px-3 py-1.5 rounded-xl bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
                     title="複製檢索指令至剪貼簿"
                   >
                     <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedQuery ? '已複製表格檢索詞！' : '複製檢索指令'}</span>
+                    <span>{copiedQuery ? '已複製檢索指令！' : '複製檢索指令'}</span>
                   </button>
 
                   <a
                     href={googleSearchUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black inline-flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black inline-flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
                     title="新分頁開啟 Google 搜尋（免登入帳號）"
                   >
                     <Search className="w-3.5 h-3.5" />
@@ -791,34 +932,79 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 </div>
               </div>
 
-              <div className="text-[11px] font-mono bg-white p-3.5 rounded-xl border border-emerald-200 text-slate-700 leading-relaxed break-words whitespace-pre-line shadow-inner">
-                {googleQueryText}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-emerald-900 font-bold px-1">
+                  <span>檢索指令內容（可直接點擊下方文字框修改）：</span>
+                  {isQueryCustomized && (
+                    <span className="text-[10px] text-amber-700 font-bold bg-amber-100/90 px-2 py-0.5 rounded-md">
+                      已自訂修改
+                    </span>
+                  )}
+                </div>
+                <textarea
+                  value={googleQueryText}
+                  onChange={(e) => setCustomGoogleQuery(e.target.value)}
+                  rows={6}
+                  placeholder="檢索指令內容..."
+                  className="w-full p-3.5 rounded-xl border border-emerald-300 bg-white text-[11px] font-mono text-slate-800 leading-relaxed focus:ring-2 focus:ring-emerald-500 focus:outline-hidden shadow-inner resize-y"
+                />
               </div>
             </div>
 
-            {/* Paste Search Results Field */}
+            {/* Upload Text File / Paste Search Results Field */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".txt,.md,.text,text/plain"
+                className="hidden"
+              />
+
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-emerald-600" />
-                  <span>貼上 Google 搜尋結果或問問 AI 表格/文字（可選）</span>
+                  <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>上傳文字檔或貼上 Google 問問 AI 內容（可選）</span>
                 </label>
-                {pastedGoogleResult && (
+
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
-                    onClick={() => setPastedGoogleResult('')}
-                    className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[11px] font-bold transition-colors cursor-pointer"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs active:scale-95"
+                    title="點擊上傳 .txt 或 .md 純文字檔"
                   >
-                    清空貼上內容
+                    <Upload className="w-3 h-3 text-emerald-700" />
+                    <span>上傳文字檔 (.txt)</span>
                   </button>
-                )}
+
+                  {uploadedFileName && (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-mono flex items-center gap-1">
+                      <FileUp className="w-3 h-3 text-emerald-600" />
+                      <span className="max-w-[150px] truncate" title={uploadedFileName}>{uploadedFileName}</span>
+                    </span>
+                  )}
+
+                  {pastedGoogleResult && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPastedGoogleResult('');
+                        setUploadedFileName(null);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[11px] font-bold transition-colors cursor-pointer"
+                    >
+                      清空內容
+                    </button>
+                  )}
+                </div>
               </div>
 
               <textarea
                 value={pastedGoogleResult}
                 onChange={(e) => setPastedGoogleResult(e.target.value)}
                 rows={4}
-                placeholder="您可將在 Google 搜尋中或問問 AI 找到的 Markdown 表格、食譜或食材清單直接貼在此處，系統將自動解析為採買清單與 7 天菜單..."
+                placeholder="您可直接點擊右上角「上傳文字檔」載入 .txt 檔案，或將在 Google 搜尋 / 問問 AI 生成的食材清單與 7 天菜單文字直接貼在此處，系統將抓取文字檔內容自動拆分為採買清單與 7 天菜單..."
                 className="w-full p-3.5 rounded-2xl border border-slate-200 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-hidden bg-slate-50/50"
               />
             </div>
@@ -829,23 +1015,34 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 type="button"
                 disabled={isGenerating}
                 onClick={() => handleGenerateAndSplitPlan(false)}
-                className="flex-1 py-3.5 px-6 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 transition-all hover:scale-101 disabled:opacity-50 cursor-pointer"
+                className={`py-3 px-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer ${
+                  pastedGoogleResult.trim() || isGenerating ? 'flex-1' : ''
+                }`}
+                title={pastedGoogleResult.trim()
+                  ? (uploadedFileName
+                      ? `抓取上傳檔案【${uploadedFileName}】內容並拆分【採購食材 ＋ 7天菜單】(${servings}人份)`
+                      : `抓取上傳/貼上文字內容並拆分【採購食材 ＋ 7天菜單】(${servings}人份)`)
+                  : `以 Google 問問 AI 模式生成並拆分【採購食材 ＋ 7天菜單】(${servings}人份)`}
+                aria-label="以 Google 問問 AI 模式生成並拆分【採購食材 ＋ 7天菜單】"
               >
-                <Sparkles className="w-4 h-4 text-slate-950" />
-                <span>
-                  {isGenerating 
-                    ? '正在連網運算並分割清單...' 
-                    : pastedGoogleResult.trim()
-                      ? `解析貼上內容並分成【採購食材 ＋ 7天菜單】(${servings}人份)`
-                      : `以 Google 問問 AI 模式生成並分成【採購食材 ＋ 7天菜單】(${servings}人份)`}
-                </span>
+                <Sparkles className={`w-4 h-4 text-slate-950 shrink-0 ${isGenerating ? 'animate-spin' : ''}`} />
+                {isGenerating && (
+                  <span className="truncate">正在連網運算並拆分清單...</span>
+                )}
+                {!isGenerating && pastedGoogleResult.trim() && (
+                  <span className="truncate">
+                    {uploadedFileName
+                      ? `抓取上傳檔案【${uploadedFileName}】內容並拆分 (${servings}人份)`
+                      : `抓取內容並拆分【採購食材 ＋ 7天菜單】(${servings}人份)`}
+                  </span>
+                )}
               </button>
 
               <button
                 type="button"
                 disabled={isGenerating}
                 onClick={() => handleGenerateAndSplitPlan(true)}
-                className="py-3.5 px-5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                className="py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs shrink-0"
                 title="輪替另一組科學主題菜單"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
@@ -856,7 +1053,7 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 <button
                   type="button"
                   onClick={handleClearAll}
-                  className="py-3.5 px-4 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                  className="py-3 px-3.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs shrink-0"
                   title="清空目前所有的食材清單與7天菜單"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
@@ -896,6 +1093,45 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
             <div className="flex items-center gap-2 flex-wrap">
               {groceryList.length > 0 && (
                 <>
+                  <button
+                    type="button"
+                    onClick={handleCopyFullPlainText}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-all shadow-xs active:scale-95 cursor-pointer"
+                    title="一鍵複製繁中結構化純文字（包含採買清單與 7 天菜單）"
+                  >
+                    {copiedPlainText ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-slate-950" />
+                        <span>已複製純文字！</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>一鍵複製純文字</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadTextFile}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                    title="下載 .txt 文字檔"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>下載 .txt</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openMarkdownModal('grocery')}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                    title="查看 Markdown / 結構化表格"
+                  >
+                    <Table className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>表格 / Markdown</span>
+                  </button>
+
                   <button
                     onClick={handleResetChecklist}
                     className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs transition-all"
@@ -945,13 +1181,13 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
               {/* Category Filter Pills */}
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
                 {[
-                  { id: 'all', label: '全部食材' },
+                  { id: 'all', label: '全部食材 (五大專區)' },
                   { id: 'unchecked', label: '待採買' },
-                  { id: 'protein', label: '蛋白質' },
-                  { id: 'vegetable', label: '蔬菜纖維' },
-                  { id: 'carb', label: '低GI碳水' },
-                  { id: 'fat_seasoning', label: '好油調味' },
-                  { id: 'fruit_beverage', label: '水果飲品' },
+                  { id: 'protein', label: '【蛋白質專區】' },
+                  { id: 'vegetable', label: '【蔬菜纖維區】' },
+                  { id: 'carb', label: '【優質低GI碳水】' },
+                  { id: 'fat_seasoning', label: '【好油脂與調味】' },
+                  { id: 'fruit_beverage', label: '【低GI水果與飲品】' },
                 ].map((cat) => (
                   <button
                     key={cat.id}
@@ -967,77 +1203,224 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 ))}
               </div>
 
-              {/* Grocery Item Checklist */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {filteredGrocery.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => toggleCheck(item.id)}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 group select-none ${
-                      item.checked
-                        ? 'bg-slate-50 border-slate-200 text-slate-400 opacity-60'
-                        : 'bg-white border-slate-200/80 hover:border-emerald-300 hover:shadow-xs text-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 mt-0.5 transition-colors border ${
-                        item.checked
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
-                          : 'border-slate-300 group-hover:border-emerald-500 bg-white'
-                      }`}>
-                        {item.checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-xs font-bold leading-tight ${item.checked ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                            {item.name}
+              {/* Grocery Item Checklist Grouped by Category */}
+              {categoryFilter === 'all' ? (
+                <div className="space-y-6">
+                  {[
+                    {
+                      id: 'protein',
+                      title: '【蛋白質專區】',
+                      badge: '🥩 肌肉修復與 MPS',
+                      color: 'border-rose-200 bg-rose-50/50 text-rose-800',
+                      badgeColor: 'bg-rose-100 text-rose-700',
+                      items: groceryList.filter((i) => i.category === 'protein'),
+                    },
+                    {
+                      id: 'vegetable',
+                      title: '【蔬菜纖維區】',
+                      badge: '🥦 微量元素與高纖',
+                      color: 'border-emerald-200 bg-emerald-50/50 text-emerald-800',
+                      badgeColor: 'bg-emerald-100 text-emerald-700',
+                      items: groceryList.filter((i) => i.category === 'vegetable'),
+                    },
+                    {
+                      id: 'carb',
+                      title: '【優質低GI碳水】',
+                      badge: '🍠 平穩血糖與肌醣原',
+                      color: 'border-amber-200 bg-amber-50/50 text-amber-800',
+                      badgeColor: 'bg-amber-100 text-amber-700',
+                      items: groceryList.filter((i) => i.category === 'carb'),
+                    },
+                    {
+                      id: 'fat_seasoning',
+                      title: '【好油脂與調味】',
+                      badge: '🥑 單元不飽和與好油',
+                      color: 'border-blue-200 bg-blue-50/50 text-blue-800',
+                      badgeColor: 'bg-blue-100 text-blue-700',
+                      items: groceryList.filter((i) => i.category === 'fat_seasoning'),
+                    },
+                    {
+                      id: 'fruit_beverage',
+                      title: '【低GI水果與飲品】',
+                      badge: '🫐 超級抗氧化與代謝',
+                      color: 'border-purple-200 bg-purple-50/50 text-purple-800',
+                      badgeColor: 'bg-purple-100 text-purple-700',
+                      items: groceryList.filter((i) => i.category === 'fruit_beverage'),
+                    },
+                  ].map((sec) => (
+                    <div key={sec.id} className="space-y-2.5">
+                      <div className="flex items-center justify-between gap-2 px-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-black text-slate-800 tracking-wide">
+                            {sec.title}
+                          </h4>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sec.badgeColor}`}>
+                            {sec.badge}
                           </span>
                         </div>
+                        <span className="text-[11px] font-bold text-slate-400">
+                          {sec.items.filter((i) => i.checked).length}/{sec.items.length} 項
+                        </span>
+                      </div>
 
-                        <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
-                          份量：{item.quantity}
+                      {sec.items.length === 0 ? (
+                        <div className="text-xs text-slate-400 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-3 text-center">
+                          本專區目前無指定食材
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {sec.items.map((item, itemIdx) => (
+                            <div
+                              key={item.id}
+                              onClick={() => toggleCheck(item.id)}
+                              className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 group select-none ${
+                                item.checked
+                                  ? 'bg-slate-50 border-slate-200 text-slate-400 opacity-60'
+                                  : 'bg-white border-slate-200/80 hover:border-emerald-300 hover:shadow-xs text-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                                <div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 mt-0.5 transition-colors border ${
+                                  item.checked
+                                    ? 'bg-emerald-600 border-emerald-600 text-white'
+                                    : 'border-slate-300 group-hover:border-emerald-500 bg-white'
+                                }`}>
+                                  {item.checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[11px] font-black text-slate-400">
+                                      {itemIdx + 1}.
+                                    </span>
+                                    <span className={`text-xs font-bold leading-tight ${item.checked ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                                      {item.name}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
+                                    份量：{item.quantity}
+                                  </div>
+
+                                  {/* Meal Plan Usage Badges */}
+                                  {item.mealUsage && item.mealUsage.length > 0 && (
+                                    <div className="flex items-center gap-1 flex-wrap mt-1.5">
+                                      <span className="text-[9px] text-slate-400 font-medium">用於：</span>
+                                      {item.mealUsage.map((usage, uIdx) => (
+                                        <span 
+                                          key={`${item.id}-usage-${usage}-${uIdx}`} 
+                                          className="text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded-md"
+                                        >
+                                          {usage}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {item.notes && (
+                                    <p className="text-[10px] text-slate-400 mt-1 line-clamp-1">
+                                      💡 {item.notes}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {item.id.startsWith('custom_') && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteItem(item.id);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition-opacity"
+                                  title="刪除自訂項目"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                /* Filtered or Unchecked List */
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {filteredGrocery.map((item, itemIdx) => (
+                    <div
+                      key={item.id}
+                      onClick={() => toggleCheck(item.id)}
+                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 group select-none ${
+                        item.checked
+                          ? 'bg-slate-50 border-slate-200 text-slate-400 opacity-60'
+                          : 'bg-white border-slate-200/80 hover:border-emerald-300 hover:shadow-xs text-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                        <div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 mt-0.5 transition-colors border ${
+                          item.checked
+                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                            : 'border-slate-300 group-hover:border-emerald-500 bg-white'
+                        }`}>
+                          {item.checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                         </div>
 
-                        {/* Meal Plan Usage Badges */}
-                        {item.mealUsage && item.mealUsage.length > 0 && (
-                          <div className="flex items-center gap-1 flex-wrap mt-1.5">
-                            <span className="text-[9px] text-slate-400 font-medium">用於：</span>
-                            {item.mealUsage.map((usage, uIdx) => (
-                              <span 
-                                key={`${item.id}-usage-${usage}-${uIdx}`} 
-                                className="text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded-md"
-                              >
-                                {usage}
-                              </span>
-                            ))}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] font-black text-slate-400">
+                              {itemIdx + 1}.
+                            </span>
+                            <span className={`text-xs font-bold leading-tight ${item.checked ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                              {item.name}
+                            </span>
                           </div>
-                        )}
 
-                        {item.notes && (
-                          <p className="text-[10px] text-slate-400 mt-1 line-clamp-1">
-                            💡 {item.notes}
-                          </p>
-                        )}
+                          <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
+                            份量：{item.quantity}
+                          </div>
+
+                          {/* Meal Plan Usage Badges */}
+                          {item.mealUsage && item.mealUsage.length > 0 && (
+                            <div className="flex items-center gap-1 flex-wrap mt-1.5">
+                              <span className="text-[9px] text-slate-400 font-medium">用於：</span>
+                              {item.mealUsage.map((usage, uIdx) => (
+                                <span 
+                                  key={`${item.id}-usage-${usage}-${uIdx}`} 
+                                  className="text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded-md"
+                                >
+                                  {usage}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {item.notes && (
+                            <p className="text-[10px] text-slate-400 mt-1 line-clamp-1">
+                              💡 {item.notes}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    {item.id.startsWith('custom_') && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteItem(item.id);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition-opacity"
-                        title="刪除自訂項目"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      {item.id.startsWith('custom_') && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteItem(item.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition-opacity"
+                          title="刪除自訂項目"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {filteredGrocery.length === 0 && (
                 <div className="text-center py-10 bg-white rounded-2xl border border-slate-200 text-xs text-slate-400">
@@ -1066,9 +1449,9 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
       {activeSubTab === 'mealplan' && (
         <div className="space-y-5">
           {mealPlan.length === 0 || !currentMealPlan ? (
-            <div className="bg-white rounded-3xl p-8 sm:p-10 border border-slate-200 text-center space-y-4 shadow-xs">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
-                <ChefHat className="w-7 h-7" />
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 text-center space-y-3 shadow-xs">
+              <div className="w-10 h-10 mx-auto rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+                <ChefHat className="w-5 h-5" />
               </div>
               <div className="space-y-1">
                 <h3 className="text-base font-bold text-slate-900">7 天建議菜單目前為空</h3>
@@ -1089,6 +1472,60 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
             </div>
           ) : (
             <>
+              {/* Quick Export & Actions Toolbar */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-xs border border-slate-200 flex items-center justify-between flex-wrap gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <UtensilsCrossed className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>7 天加爾平原型食物菜單（{planMeta.servings || 1}人份）</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    每日四餐精準計算熱量與蛋白質，每餐蛋白質達標觸發 MPS 肌肉蛋白質合成
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleCopyFullPlainText}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-all shadow-xs active:scale-95 cursor-pointer"
+                    title="一鍵複製繁中結構化純文字（包含採買清單與 7 天菜單）"
+                  >
+                    {copiedPlainText ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-slate-950" />
+                        <span>已複製純文字！</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>一鍵複製純文字</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadTextFile}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                    title="下載 .txt 文字檔"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>下載 .txt</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openMarkdownModal('mealplan')}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                    title="查看 Markdown / 結構化表格"
+                  >
+                    <Table className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>表格 / Markdown</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Day of Week Selector */}
               <div className="flex items-center gap-1.5 p-1 bg-white rounded-2xl border border-slate-200 overflow-x-auto no-scrollbar">
                 {mealPlan.map((plan, idx) => {
@@ -1187,207 +1624,183 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                       const sCal = currentMealPlan.snack?.caloriesApprox || Math.max(80, macroPlan.targetCalories - (bCal + lCal + dCal));
                       const sProt = currentMealPlan.snack?.proteinApprox || Math.max(5, macroPlan.targetProteinG - (bProt + lProt + dProt));
 
+                      const renderMealCard = (
+                        meal: DayMealPlan['breakfast'],
+                        slotLabel: string,
+                        slotIcon: React.ElementType,
+                        cal: number,
+                        prot: number,
+                        theme: {
+                          cardBg: string;
+                          cardBorder: string;
+                          iconBg: string;
+                          iconColor: string;
+                          textColor: string;
+                          badgeBorder: string;
+                          ingText: string;
+                          tagBg: string;
+                          tagText: string;
+                        }
+                      ) => {
+                        const MealIcon = slotIcon;
+                        return (
+                          <div className={`p-4 rounded-2xl ${theme.cardBg} border ${theme.cardBorder} space-y-3 shadow-2xs`}>
+                            {/* Header: Slot Badge & Calories/Protein Metrics */}
+                            <div className="flex items-center justify-between text-xs gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`p-1.5 rounded-xl ${theme.iconBg} flex items-center justify-center shrink-0 shadow-2xs`} title={slotLabel}>
+                                  <MealIcon className={`w-4 h-4 ${theme.iconColor}`} />
+                                </span>
+                                <span className={`text-xs font-black ${theme.textColor}`}>
+                                  {slotLabel}
+                                </span>
+                              </div>
+                              {/* Top right corner: calories & protein */}
+                              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs">
+                                <span className="font-extrabold text-slate-800 text-xs flex items-center gap-0.5">
+                                  <span className="text-orange-500 text-[11px]">🔥</span>
+                                  <span>{cal}</span>
+                                  <span className="text-[10px] font-normal text-slate-500">kcal</span>
+                                </span>
+                                <span className="text-slate-200 font-bold">|</span>
+                                <span className="font-extrabold text-emerald-700 text-xs flex items-center gap-0.5">
+                                  <span className="text-emerald-600 text-[11px]">🥩</span>
+                                  <span>{prot}g</span>
+                                  <span className="text-[10px] font-normal text-emerald-600/80">蛋白</span>
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 1. Meal / Dish Name */}
+                            <div className="pt-0.5">
+                              <h4 className="text-sm sm:text-base font-extrabold text-slate-900 leading-snug">
+                                {meal.name}
+                              </h4>
+                            </div>
+
+                            {/* 2. Cooking Method & Steps (Placed directly under the dish name) */}
+                            <div className="p-3 rounded-xl bg-white/95 border border-slate-200/80 shadow-2xs space-y-1">
+                              <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                                <ChefHat className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>料理作法：</span>
+                              </div>
+                              <p className="text-xs text-slate-700 leading-relaxed pl-5 whitespace-pre-line">
+                                {meal.description || '依原型高蛋白食材極簡備餐原則料理。'}
+                              </p>
+                            </div>
+                            
+                            {/* 3. Synchronized Ingredients */}
+                            {meal.ingredients && meal.ingredients.length > 0 && (
+                              <div className="pt-0.5">
+                                <div className={`text-[10px] font-bold ${theme.ingText} mb-1.5 flex items-center gap-1`}>
+                                  <CalendarCheck className="w-3 h-3 opacity-80" />
+                                  <span>採買清單對應食材：</span>
+                                </div>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {meal.ingredients.map((ing, iIdx) => (
+                                    <span key={`ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-slate-800 px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                                      {ing}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 4. Tags */}
+                            {meal.tags && meal.tags.length > 0 && (
+                              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                                {meal.tags.map((t, tIdx) => (
+                                  <span key={`tag-${t}-${tIdx}`} className={`text-[10px] font-semibold ${theme.tagBg} ${theme.tagText} px-2 py-0.5 rounded-md border border-slate-200/60`}>
+                                    #{t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      };
+
                       return (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {/* Breakfast */}
-                          <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-100/80 space-y-2.5">
-                            <div className="flex items-center justify-between text-xs gap-2">
-                              <span className="p-1.5 rounded-xl bg-amber-200/80 text-amber-950 flex items-center justify-center shrink-0 shadow-2xs" title="早餐">
-                                <Sunrise className="w-4 h-4 text-amber-800" />
-                              </span>
-                              {/* Top right corner: calories & protein */}
-                              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-amber-200 shadow-2xs">
-                                <span className="font-extrabold text-slate-800 text-xs flex items-center gap-0.5">
-                                  <span className="text-orange-500 text-[11px]">🔥</span>
-                                  <span>{bCal}</span>
-                                  <span className="text-[10px] font-normal text-slate-500">kcal</span>
-                                </span>
-                                <span className="text-amber-200 font-bold">|</span>
-                                <span className="font-extrabold text-emerald-700 text-xs flex items-center gap-0.5">
-                                  <span className="text-emerald-600 text-[11px]">🥩</span>
-                                  <span>{bProt}g</span>
-                                  <span className="text-[10px] font-normal text-emerald-600/80">蛋白</span>
-                                </span>
-                              </div>
-                            </div>
-                            <h4 className="text-sm font-bold text-slate-900">{currentMealPlan.breakfast.name}</h4>
-                            <p className="text-xs text-slate-600 leading-relaxed">{currentMealPlan.breakfast.description}</p>
-                            
-                            {/* Synchronized Ingredients */}
-                            {currentMealPlan.breakfast.ingredients && (
-                              <div className="pt-1">
-                                <div className="text-[10px] font-bold text-amber-900 mb-1 flex items-center gap-1">
-                                  <CalendarCheck className="w-3 h-3 text-amber-600" />
-                                  <span>採買清單對應食材：</span>
-                                </div>
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {currentMealPlan.breakfast.ingredients.map((ing, iIdx) => (
-                                    <span key={`bf-ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-amber-900 px-1.5 py-0.5 rounded border border-amber-200 shadow-2xs">
-                                      {ing}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="flex items-center gap-1 flex-wrap pt-1">
-                              {currentMealPlan.breakfast.tags.map((t, tIdx) => (
-                                <span key={`bf-tag-${t}-${tIdx}`} className="text-[10px] font-semibold bg-amber-100/60 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200/60">
-                                  #{t}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
+                          {renderMealCard(
+                            currentMealPlan.breakfast,
+                            '早餐',
+                            Sunrise,
+                            bCal,
+                            bProt,
+                            {
+                              cardBg: 'bg-amber-50/50',
+                              cardBorder: 'border-amber-100/90',
+                              iconBg: 'bg-amber-200/80 text-amber-950',
+                              iconColor: 'text-amber-800',
+                              textColor: 'text-amber-900',
+                              badgeBorder: 'border-amber-200',
+                              ingText: 'text-amber-900',
+                              tagBg: 'bg-amber-100/60',
+                              tagText: 'text-amber-800',
+                            }
+                          )}
 
                           {/* Lunch */}
-                          <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100/80 space-y-2.5">
-                            <div className="flex items-center justify-between text-xs gap-2">
-                              <span className="p-1.5 rounded-xl bg-emerald-200/80 text-emerald-950 flex items-center justify-center shrink-0 shadow-2xs" title="午餐">
-                                <Sun className="w-4 h-4 text-emerald-800" />
-                              </span>
-                              {/* Top right corner: calories & protein */}
-                              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs">
-                                <span className="font-extrabold text-slate-800 text-xs flex items-center gap-0.5">
-                                  <span className="text-orange-500 text-[11px]">🔥</span>
-                                  <span>{lCal}</span>
-                                  <span className="text-[10px] font-normal text-slate-500">kcal</span>
-                                </span>
-                                <span className="text-emerald-200 font-bold">|</span>
-                                <span className="font-extrabold text-emerald-700 text-xs flex items-center gap-0.5">
-                                  <span className="text-emerald-600 text-[11px]">🥩</span>
-                                  <span>{lProt}g</span>
-                                  <span className="text-[10px] font-normal text-emerald-600/80">蛋白</span>
-                                </span>
-                              </div>
-                            </div>
-                            <h4 className="text-sm font-bold text-slate-900">{currentMealPlan.lunch.name}</h4>
-                            <p className="text-xs text-slate-600 leading-relaxed">{currentMealPlan.lunch.description}</p>
-                            
-                            {/* Synchronized Ingredients */}
-                            {currentMealPlan.lunch.ingredients && (
-                              <div className="pt-1">
-                                <div className="text-[10px] font-bold text-emerald-900 mb-1 flex items-center gap-1">
-                                  <CalendarCheck className="w-3 h-3 text-emerald-600" />
-                                  <span>採買清單對應食材：</span>
-                                </div>
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {currentMealPlan.lunch.ingredients.map((ing, iIdx) => (
-                                    <span key={`lu-ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-emerald-900 px-1.5 py-0.5 rounded border border-emerald-200 shadow-2xs">
-                                      {ing}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="flex items-center gap-1 flex-wrap pt-1">
-                              {currentMealPlan.lunch.tags.map((t, tIdx) => (
-                                <span key={`lu-tag-${t}-${tIdx}`} className="text-[10px] font-semibold bg-emerald-100/60 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200/60">
-                                  #{t}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
+                          {renderMealCard(
+                            currentMealPlan.lunch,
+                            '午餐',
+                            Sun,
+                            lCal,
+                            lProt,
+                            {
+                              cardBg: 'bg-emerald-50/50',
+                              cardBorder: 'border-emerald-100/90',
+                              iconBg: 'bg-emerald-200/80 text-emerald-950',
+                              iconColor: 'text-emerald-800',
+                              textColor: 'text-emerald-900',
+                              badgeBorder: 'border-emerald-200',
+                              ingText: 'text-emerald-900',
+                              tagBg: 'bg-emerald-100/60',
+                              tagText: 'text-emerald-800',
+                            }
+                          )}
 
                           {/* Dinner */}
-                          <div className="p-4 rounded-2xl bg-teal-50/50 border border-teal-100/80 space-y-2.5">
-                            <div className="flex items-center justify-between text-xs gap-2">
-                              <span className="p-1.5 rounded-xl bg-teal-200/80 text-teal-950 flex items-center justify-center shrink-0 shadow-2xs" title="晚餐">
-                                <Moon className="w-4 h-4 text-teal-800" />
-                              </span>
-                              {/* Top right corner: calories & protein */}
-                              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-teal-200 shadow-2xs">
-                                <span className="font-extrabold text-slate-800 text-xs flex items-center gap-0.5">
-                                  <span className="text-orange-500 text-[11px]">🔥</span>
-                                  <span>{dCal}</span>
-                                  <span className="text-[10px] font-normal text-slate-500">kcal</span>
-                                </span>
-                                <span className="text-teal-200 font-bold">|</span>
-                                <span className="font-extrabold text-emerald-700 text-xs flex items-center gap-0.5">
-                                  <span className="text-emerald-600 text-[11px]">🥩</span>
-                                  <span>{dProt}g</span>
-                                  <span className="text-[10px] font-normal text-emerald-600/80">蛋白</span>
-                                </span>
-                              </div>
-                            </div>
-                            <h4 className="text-sm font-bold text-slate-900">{currentMealPlan.dinner.name}</h4>
-                            <p className="text-xs text-slate-600 leading-relaxed">{currentMealPlan.dinner.description}</p>
-                            
-                            {/* Synchronized Ingredients */}
-                            {currentMealPlan.dinner.ingredients && (
-                              <div className="pt-1">
-                                <div className="text-[10px] font-bold text-teal-900 mb-1 flex items-center gap-1">
-                                  <CalendarCheck className="w-3 h-3 text-teal-600" />
-                                  <span>採買清單對應食材：</span>
-                                </div>
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {currentMealPlan.dinner.ingredients.map((ing, iIdx) => (
-                                    <span key={`di-ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-teal-900 px-1.5 py-0.5 rounded border border-teal-200 shadow-2xs">
-                                      {ing}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="flex items-center gap-1 flex-wrap pt-1">
-                              {currentMealPlan.dinner.tags.map((t, tIdx) => (
-                                <span key={`di-tag-${t}-${tIdx}`} className="text-[10px] font-semibold bg-teal-100/60 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
-                                  #{t}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
+                          {renderMealCard(
+                            currentMealPlan.dinner,
+                            '晚餐',
+                            Moon,
+                            dCal,
+                            dProt,
+                            {
+                              cardBg: 'bg-teal-50/50',
+                              cardBorder: 'border-teal-100/90',
+                              iconBg: 'bg-teal-200/80 text-teal-950',
+                              iconColor: 'text-teal-800',
+                              textColor: 'text-teal-900',
+                              badgeBorder: 'border-teal-200',
+                              ingText: 'text-teal-900',
+                              tagBg: 'bg-teal-100/60',
+                              tagText: 'text-teal-800',
+                            }
+                          )}
 
                           {/* Healthy Snack */}
-                          <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100/80 space-y-2.5">
-                            <div className="flex items-center justify-between text-xs gap-2">
-                              <span className="p-1.5 rounded-xl bg-purple-200/80 text-purple-950 flex items-center justify-center shrink-0 shadow-2xs" title="午後點心">
-                                <Apple className="w-4 h-4 text-purple-800" />
-                              </span>
-                              {/* Top right corner: calories & protein */}
-                              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-purple-200 shadow-2xs">
-                                <span className="font-extrabold text-slate-800 text-xs flex items-center gap-0.5">
-                                  <span className="text-orange-500 text-[11px]">🔥</span>
-                                  <span>{sCal}</span>
-                                  <span className="text-[10px] font-normal text-slate-500">kcal</span>
-                                </span>
-                                <span className="text-purple-200 font-bold">|</span>
-                                <span className="font-extrabold text-emerald-700 text-xs flex items-center gap-0.5">
-                                  <span className="text-emerald-600 text-[11px]">🥩</span>
-                                  <span>{sProt}g</span>
-                                  <span className="text-[10px] font-normal text-emerald-600/80">蛋白</span>
-                                </span>
-                              </div>
-                            </div>
-                            <h4 className="text-sm font-bold text-slate-900">{currentMealPlan.snack.name}</h4>
-                            <p className="text-xs text-slate-600 leading-relaxed">{currentMealPlan.snack.description}</p>
-                            
-                            {/* Synchronized Ingredients */}
-                            {currentMealPlan.snack.ingredients && (
-                              <div className="pt-1">
-                                <div className="text-[10px] font-bold text-purple-900 mb-1 flex items-center gap-1">
-                                  <CalendarCheck className="w-3 h-3 text-purple-600" />
-                                  <span>採買清單對應食材：</span>
-                                </div>
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {currentMealPlan.snack.ingredients.map((ing, iIdx) => (
-                                    <span key={`sn-ing-${ing}-${iIdx}`} className="text-[10px] font-medium bg-white text-purple-900 px-1.5 py-0.5 rounded border border-purple-200 shadow-2xs">
-                                      {ing}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="flex items-center gap-1 flex-wrap pt-1">
-                              {currentMealPlan.snack.tags.map((t, tIdx) => (
-                                <span key={`sn-tag-${t}-${tIdx}`} className="text-[10px] font-semibold bg-purple-100/60 text-purple-800 px-2 py-0.5 rounded-md border border-purple-200/60">
-                                  #{t}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
+                          {renderMealCard(
+                            currentMealPlan.snack,
+                            '午後點心',
+                            Apple,
+                            sCal,
+                            sProt,
+                            {
+                              cardBg: 'bg-purple-50/50',
+                              cardBorder: 'border-purple-100/90',
+                              iconBg: 'bg-purple-200/80 text-purple-950',
+                              iconColor: 'text-purple-800',
+                              textColor: 'text-purple-900',
+                              badgeBorder: 'border-purple-200',
+                              ingText: 'text-purple-900',
+                              tagBg: 'bg-purple-100/60',
+                              tagText: 'text-purple-800',
+                            }
+                          )}
                         </div>
                       );
                     })()}
@@ -1424,7 +1837,17 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleDownloadTextFile}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95 border border-slate-300"
+                  title="下載完整結構化文字檔 (.txt)"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-700" />
+                  <span>下載文字檔 (.txt)</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1433,22 +1856,24 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
                         ? generateGroceryMarkdownTable()
                         : markdownModalTab === 'mealplan'
                         ? generateMealPlanMarkdownTable()
+                        : markdownModalTab === 'plaintext'
+                        ? generateStructuredPlainText()
                         : `${generateGroceryMarkdownTable()}\n\n---\n\n${generateMealPlanMarkdownTable()}`;
                     navigator.clipboard.writeText(textToCopy);
                     setCopiedModalText(true);
                     setTimeout(() => setCopiedModalText(false), 2000);
                   }}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                 >
                   {copiedModalText ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-white" />
-                      <span>已複製表格！</span>
+                      <span>已複製內容！</span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5" />
-                      <span>複製當前表格</span>
+                      <span>{markdownModalTab === 'plaintext' ? '一鍵複製純文字' : '一鍵複製當前內容'}</span>
                     </>
                   )}
                 </button>
@@ -1464,11 +1889,23 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
             </div>
 
             {/* Sub Tabs */}
-            <div className="flex items-center gap-1 p-2 bg-slate-100 border-b border-slate-200">
+            <div className="flex items-center gap-1 p-2 bg-slate-100 border-b border-slate-200 overflow-x-auto no-scrollbar">
+              <button
+                type="button"
+                onClick={() => setMarkdownModalTab('plaintext')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shrink-0 ${
+                  markdownModalTab === 'plaintext'
+                    ? 'bg-amber-400 text-slate-950 shadow-xs'
+                    : 'text-slate-600 hover:bg-white/60'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5 text-slate-800" />
+                <span>📝 繁體中文結構化純文字 (.txt)</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setMarkdownModalTab('mealplan')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 ${
                   markdownModalTab === 'mealplan'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:bg-white/60'
@@ -1479,7 +1916,7 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
               <button
                 type="button"
                 onClick={() => setMarkdownModalTab('grocery')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 ${
                   markdownModalTab === 'grocery'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:bg-white/60'
@@ -1490,7 +1927,7 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
               <button
                 type="button"
                 onClick={() => setMarkdownModalTab('both')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 ${
                   markdownModalTab === 'both'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:bg-white/60'
@@ -1502,6 +1939,58 @@ export const WeekendGroceryMealPlan: React.FC<WeekendGroceryMealPlanProps> = ({
 
             {/* Modal Body */}
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
+              {/* Tab: Structured Plain Text (.txt format) */}
+              {markdownModalTab === 'plaintext' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="space-y-0.5">
+                      <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                        <span>繁體中文結構化純文字檔 (.txt) 預覽</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        依據【4. 輸出結構與文字檔格式】規範，完整包含一、【一週超市食材採買清單】與二、【7天原型食物建議菜單】
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyFullPlainText}
+                        className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-all shadow-xs flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                      >
+                        {copiedPlainText ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-slate-950" />
+                            <span>已一鍵複製純文字！</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>一鍵複製繁中純文字</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDownloadTextFile}
+                        className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 text-amber-400" />
+                        <span>下載 .txt 文字檔</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950 text-slate-100 p-4 sm:p-5 rounded-2xl font-mono text-[11px] sm:text-xs leading-relaxed overflow-x-auto max-h-96 shadow-inner border border-slate-800 selection:bg-amber-400 selection:text-slate-950">
+                    <pre className="whitespace-pre-wrap font-mono">
+                      {generateStructuredPlainText()}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
               {/* Tab: Meal Plan or Both */}
               {(markdownModalTab === 'mealplan' || markdownModalTab === 'both') && (
                 <div className="space-y-3">
